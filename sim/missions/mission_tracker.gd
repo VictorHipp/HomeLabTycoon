@@ -12,6 +12,23 @@ func _init(def: MissionDefinition) -> void:
 	definition = def
 
 
+## Serialisable state. `completed` is saved so rewards are never granted twice after loading.
+func save_state() -> Dictionary:
+	return {"definition": definition.resource_path, "status": status.duplicate(), "completed": completed}
+
+
+static func from_state(data: Dictionary) -> MissionTracker:
+	var def := load(String(data["definition"])) as MissionDefinition
+	if def == null:
+		push_error("MissionTracker: cannot load %s" % data["definition"])
+		return null
+	var tracker := MissionTracker.new(def)
+	for value: Variant in data.get("status", []):
+		tracker.status.append(bool(value))
+	tracker.completed = bool(data.get("completed", false))
+	return tracker
+
+
 func evaluate(world: SimWorld) -> void:
 	var new_status: Array[bool] = []
 	for req: MissionRequirement in definition.requirements:

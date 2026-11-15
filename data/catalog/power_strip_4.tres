@@ -7,6 +7,8 @@
 [sub_resource type="Resource" id="Resource_yiuig"]
 script = ExtResource("1_olsjw")
 id = &"outlet"
+face = &"top"
+height_m = 0.04
 kind = 7
 count = 4
 speed_mbps = 0

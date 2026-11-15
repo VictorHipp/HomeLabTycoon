@@ -64,6 +64,11 @@ func face_towards(point: Vector3) -> void:
 		model.rotation.y = atan2(dir.x, dir.z)
 
 
+## Where the character should appear when this game is loaded (a free spot on the floor).
+func save_position() -> Vector3:
+	return global_position
+
+
 func set_model_visible(value: bool) -> void:
 	model.visible = value
 

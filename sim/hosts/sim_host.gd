@@ -49,6 +49,33 @@ func find_interface(iface_name: String) -> Interface:
 	return null
 
 
+## Serialisable state: what can change at run time (identity comes from the HostSpec, MACs
+## are derived from the device id).
+func save_state() -> Dictionary:
+	var ifaces: Array = []
+	for iface: Interface in interfaces:
+		var addrs: Array = []
+		for a: Dictionary in iface.addresses:
+			addrs.append({"ip": a["ip"], "prefix": a["prefix"], "dynamic": a["dynamic"]})
+		ifaces.append({"name": iface.name, "admin_up": iface.admin_up, "addresses": addrs})
+	return {"hostname": hostname, "interfaces": ifaces, "default_gateway": default_gateway,
+		"default_gateway_dynamic": default_gateway_dynamic}
+
+
+func load_state(data: Dictionary) -> void:
+	hostname = String(data.get("hostname", hostname))
+	for saved: Dictionary in data.get("interfaces", []):
+		var iface := find_interface(String(saved["name"]))
+		if iface == null:
+			continue
+		iface.admin_up = bool(saved["admin_up"])
+		iface.addresses.clear()
+		for a: Dictionary in saved["addresses"]:
+			iface.addresses.append({"ip": int(a["ip"]), "prefix": int(a["prefix"]), "dynamic": bool(a["dynamic"])})
+	default_gateway = int(data.get("default_gateway", -1))
+	default_gateway_dynamic = bool(data.get("default_gateway_dynamic", false))
+
+
 ## Power loss / reboot: runtime configuration made with `ip` is lost (decision 9).
 func reset_runtime() -> void:
 	for iface: Interface in interfaces:

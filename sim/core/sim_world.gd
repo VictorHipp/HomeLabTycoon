@@ -10,11 +10,15 @@ signal event_emitted(type: StringName, data: Dictionary)
 const MINUTES_PER_REAL_SECOND := 1.0
 const DELIVERY_MINUTES := 120.0 ## Standard shipping (simplified, docs/HARDWARE_CATALOG.md §5.1).
 const RACK_UNIT_M := 0.04445 ## 1U [VERIFICADO: EIA-310 via Wikipedia, 2026-11-15]
-const CABLE_ROUTING_FACTOR := 1.2 ## Straight distance x factor + slack (docs/INTERACTION_SYSTEM.md §9).
-const CABLE_SLACK_M := 0.3
+## Cable length = route along the floor + both ends (docs/INTERACTION_SYSTEM.md §9).
+const CABLE_SLACK_M := 0.2 ## Extra length for the bends.
+const RACK_CABLE_SLACK_M := 0.1 ## Between two devices of the same rack.
+const PORT_OUT_M := 0.04 ## The plug sticks out of the socket before the cable bends.
+const EXIT_GAP_M := 0.035 ## Gap between a device side and the cable going down to the floor.
+const RACK_POST_INSET_M := 0.03 ## Cables go down the rack posts, this far inside the rack sides.
 const MAX_STEP_MINUTES := 5.0 ## Long skips are split into steps of at most this size.
 const PACKAGE_FOOTPRINT := Vector2(0.5, 0.4)
-const PACKAGE_SPACING_M := 0.6
+const DELIVERY_SEARCH_STEP_M := 0.25 ## Grid used to find another spot if the zone is occupied.
 
 var catalog: Catalog
 var time_minutes: float = 8.0 * 60.0 ## Day 1, 08:00.
@@ -28,10 +32,18 @@ var cable_ends: Dictionary = {} ## cable device id -> {"a": port_ref, "b": port_
 var port_cable: Dictionary = {} ## port_ref -> cable device id
 var room_bounds: Rect2 = Rect2() ## Floor area (x, z) where things can be placed.
 var obstacles: Array[Rect2] = [] ## Furniture footprints (x, z).
-var delivery_point: Vector3 = Vector3.ZERO
+## Floor area by the entrance reserved for deliveries: every box waits there in one stack
+## and nothing may be placed on it (docs/INTERACTION_SYSTEM.md §7).
+var delivery_zone: Rect2 = Rect2()
+## Furniture that stands on the floor: cables go around it (a desk on legs only counts its legs).
+var cable_obstacles: Array[Rect2] = []
 var mission: MissionTracker = null
 
 var _next_id: int = 1
+var _router: CableRouter = null
+var _state_version: int = 0 ## Grows with every event: invalidates cached cable routes.
+var _route_cache: Dictionary = {}
+var _route_cache_version: int = -1
 
 
 func _init(catalog_to_use: Catalog = null) -> void:
@@ -225,26 +237,65 @@ func _process_orders() -> void:
 			for device_id: int in group:
 				ids.append(device_id)
 				get_device(device_id).location = &"package"
-			var package := {"id": _next_id, "device_ids": ids, "position": _free_package_spot()}
+			var package := {"id": _next_id, "device_ids": ids, "position": delivery_spot()}
 			_next_id += 1
 			packages[package["id"]] = package
 		_emit(&"package_delivered", {"order_id": order["id"]})
 
 
-func _free_package_spot() -> Vector3:
-	for i: int in 12:
-		var spot := delivery_point + Vector3(PACKAGE_SPACING_M * (i % 4), 0.0, -PACKAGE_SPACING_M * (i / 4))
-		var rect := Rect2(spot.x - PACKAGE_FOOTPRINT.x / 2, spot.z - PACKAGE_FOOTPRINT.y / 2, PACKAGE_FOOTPRINT.x, PACKAGE_FOOTPRINT.y)
-		var taken := false
-		for other: Dictionary in packages.values():
-			if (other["position"] as Vector3).distance_to(spot) < 0.3:
-				taken = true
-		for d: SimDevice in devices.values():
-			if d.location == &"placed" and footprint_rect(d.definition, d.position, d.yaw_degrees).intersects(rect):
-				taken = true
-		if not taken:
-			return spot
-	return delivery_point
+## Where the stack of boxes goes: the centre of the delivery zone. If something already stands
+## there (only possible in a game saved before the zone was reserved), the nearest free spot
+## near it, so no object is removed and no delivery is lost.
+func delivery_spot() -> Vector3:
+	var centre := delivery_zone.get_center()
+	if _package_spot_free(centre):
+		return Vector3(centre.x, 0.0, centre.y)
+	var best := Vector2.INF
+	var steps := 12
+	for ix: int in range(-steps, steps + 1):
+		for iz: int in range(-steps, steps + 1):
+			var p := centre + Vector2(ix, iz) * DELIVERY_SEARCH_STEP_M
+			if p.distance_to(centre) < best.distance_to(centre) and _package_spot_free(p):
+				best = p
+	if best == Vector2.INF:
+		return Vector3(centre.x, 0.0, centre.y)
+	return Vector3(best.x, 0.0, best.y)
+
+
+## True when the stack is not where it should be (the delivery zone was occupied).
+func delivery_zone_blocked() -> bool:
+	return not _package_spot_free(delivery_zone.get_center())
+
+
+func _package_spot_free(p: Vector2) -> bool:
+	var rect := Rect2(p - PACKAGE_FOOTPRINT / 2.0, PACKAGE_FOOTPRINT).grow(0.05)
+	if not room_bounds.encloses(rect):
+		return false
+	for obstacle: Rect2 in obstacles:
+		if rect.intersects(obstacle):
+			return false
+	for d: SimDevice in _floor_devices(null):
+		if rect.intersects(footprint_rect(d.definition, d.position, d.yaw_degrees)):
+			return false
+		for zone: Rect2 in service_zones(d.definition, d.position, d.yaw_degrees):
+			if rect.intersects(zone):
+				return false
+	return true
+
+
+## Puts every waiting box on the current delivery spot (after loading a game).
+func _gather_packages() -> void:
+	var spot := delivery_spot()
+	for package: Dictionary in packages.values():
+		package["position"] = spot
+
+
+## The package opened by a click on the stack: the one on top (the newest).
+func top_package_id() -> int:
+	var best := -1
+	for package_id: int in packages:
+		best = maxi(best, package_id)
+	return best
 
 
 func open_package(package_id: int) -> CommandResult:
@@ -294,8 +345,6 @@ func placement_problem(device_id: int, pos: Vector3, yaw_degrees: float) -> Stri
 		return tr("Ese objeto no está en tu inventario.")
 	if d.definition.placement != &"floor":
 		return tr("%s no se coloca en el suelo.") % d.display_name()
-	if d.location == &"placed" and has_cables_inside(d):
-		return tr("Desconecta antes los cables de %s.") % d.display_name()
 	var rect := footprint_rect(d.definition, pos, yaw_degrees)
 	if not room_bounds.encloses(rect):
 		return tr("No cabe ahí: se sale de la habitación.")
@@ -305,6 +354,8 @@ func placement_problem(device_id: int, pos: Vector3, yaw_degrees: float) -> Stri
 	for other: SimDevice in _floor_devices(d):
 		if rect.intersects(footprint_rect(other.definition, other.position, other.yaw_degrees)):
 			return tr("No cabe ahí: choca con %s.") % other.display_name()
+	if rect.intersects(delivery_zone):
+		return tr("Esa zona junto a la puerta está reservada para las entregas.")
 	for package: Dictionary in packages.values():
 		if rect.intersects(_package_rect(package)):
 			return tr("No cabe ahí: hay un paquete en medio.")
@@ -319,9 +370,66 @@ func placement_problem(device_id: int, pos: Vector3, yaw_degrees: float) -> Stri
 			blocked = blocked or zone.intersects(obstacle)
 		for other: SimDevice in _floor_devices(d):
 			blocked = blocked or zone.intersects(footprint_rect(other.definition, other.position, other.yaw_degrees))
+		blocked = blocked or zone.intersects(delivery_zone)
 		if blocked:
 			return tr("Deja al menos %d cm libres delante y detrás de %s: hacen falta para trabajar en su frontal y en su trasera.") % [roundi(rack.service_clearance_m * 100.0), d.display_name()]
-	return ""
+	return _cable_problem_if_placed(d, pos, yaw_degrees)
+
+
+## Cables already laid must still have a way and be long enough with `d` at the new spot:
+## its own cables when it is moved, and any cable whose route it would cover.
+func _cable_problem_if_placed(d: SimDevice, pos: Vector3, yaw_degrees: float) -> String:
+	if cable_ends.is_empty():
+		return ""
+	var rect := footprint_rect(d.definition, pos, yaw_degrees).grow(CableRouter.CLEARANCE)
+	var inside: Array[int] = [d.id]
+	for m: SimDevice in mounted_in(d):
+		inside.append(m.id)
+	var affected: Array[int] = []
+	for cable_id: int in cable_ends:
+		var ends: Dictionary = cable_ends[cable_id]
+		if ends["b"] == "":
+			continue
+		if PortRef.device_id(ends["a"]) in inside or PortRef.device_id(ends["b"]) in inside:
+			affected.append(cable_id)
+		elif _route_crosses(cable_route(cable_id), rect):
+			affected.append(cable_id)
+	if affected.is_empty():
+		return ""
+	var saved := [d.location, d.position, d.yaw_degrees]
+	d.location = &"placed"
+	d.position = Vector3(pos.x, 0.0, pos.z)
+	d.yaw_degrees = yaw_degrees
+	var problem := ""
+	for cable_id: int in affected:
+		var ends: Dictionary = cable_ends[cable_id]
+		var route := route_between(ends["a"], ends["b"])
+		var spec := get_device(cable_id).definition.get_spec(CableSpec) as CableSpec
+		var name := get_device(cable_id).definition.model
+		if not route["ok"]:
+			problem = tr("Ahí cortaría el paso del cable %s: %s") % [name, route["reason"]]
+			break
+		if route["length"] > spec.length_m:
+			problem = tr("Con %s ahí, el cable %s no llegaría: harían falta unos %.1f m y mide %.0f m.") % [d.display_name(), name, route["length"], spec.length_m]
+			break
+	d.location = saved[0]
+	d.position = saved[1]
+	d.yaw_degrees = saved[2]
+	return problem
+
+
+static func _route_crosses(route: Dictionary, rect: Rect2) -> bool:
+	if not route.get("ok", false):
+		return false
+	var points: PackedVector2Array = route["floor"]
+	for i: int in range(1, points.size()):
+		var a := points[i - 1]
+		var b := points[i]
+		var steps := maxi(1, ceili(a.distance_to(b) / 0.02))
+		for k: int in steps + 1:
+			if rect.has_point(a.lerp(b, float(k) / steps)):
+				return true
+	return false
 
 
 func place_device(device_id: int, pos: Vector3, yaw_degrees: float) -> CommandResult:
@@ -352,24 +460,44 @@ func _package_rect(package: Dictionary) -> Rect2:
 	return Rect2(p.x - PACKAGE_FOOTPRINT.x / 2, p.z - PACKAGE_FOOTPRINT.y / 2, PACKAGE_FOOTPRINT.x, PACKAGE_FOOTPRINT.y)
 
 
-## Placement preview help for a rack: power cable length that a device in its top unit would
-## need to reach the nearest power strip (same rule as connect_cable) and the longest power
-## cable in the catalog. {} for devices that are not racks.
-func rack_power_estimate(def: HardwareDefinition, pos: Vector3, yaw_degrees: float) -> Dictionary:
-	var rack := def.get_spec(RackSpec) as RackSpec
+## Placement preview help for a rack: power cable that a device in its top unit would need to
+## reach the nearest power strip along the floor (same rule as connect_cable), the cord that
+## comes with the equipment and the longest one in the shop. {} for devices that are not racks.
+func rack_power_estimate(device_id: int, pos: Vector3, yaw_degrees: float) -> Dictionary:
+	var d := get_device(device_id)
+	var rack := d.definition.get_spec(RackSpec) as RackSpec if d != null else null
 	if rack == null:
 		return {}
-	var anchor := rack_unit_anchor(def, pos, yaw_degrees, rack.capacity_u)
+	var saved := [d.location, d.position, d.yaw_degrees]
+	d.location = &"placed"
+	d.position = Vector3(pos.x, 0.0, pos.z)
+	d.yaw_degrees = yaw_degrees
 	var needed := INF
+	var height := rack.first_unit_height_m + (rack.capacity_u - 1) * RACK_UNIT_M + 0.022
 	for strip: SimDevice in devices_of(&"power"):
-		if strip.is_in_world():
-			needed = minf(needed, cable_length_needed(device_anchor(strip), anchor))
+		if not strip.is_in_world():
+			continue
+		var outlet := strip.definition.ports[0]
+		var rack_end := _rack_post_end(d, &"rear", height, _center2(strip))
+		var strip_end := _cable_end(strip, outlet, rack_end["exit"])
+		var path := _cable_router().find_path(rack_end["exit"], strip_end["exit"], _floor_device_rects())
+		if not path.is_empty():
+			needed = minf(needed, rack_end["drop"] + CableRouter.length_of(path) + strip_end["drop"] + CABLE_SLACK_M)
+	d.location = saved[0]
+	d.position = saved[1]
+	d.yaw_degrees = saved[2]
+	var included := INF
 	var longest := 0.0
 	for item: HardwareDefinition in catalog.items.values():
 		var cable := item.get_spec(CableSpec) as CableSpec
 		if cable != null and cable.media == &"power":
 			longest = maxf(longest, cable.length_m)
-	return {"needed": needed, "longest": longest}
+		for extra: StringName in item.box_contents:
+			var boxed := catalog.get_item(extra)
+			var boxed_spec := boxed.get_spec(CableSpec) as CableSpec if boxed != null else null
+			if boxed_spec != null and boxed_spec.media == &"power":
+				included = minf(included, boxed_spec.length_m)
+	return {"needed": needed, "included": included, "longest": longest}
 
 
 func pick_up_device(device_id: int) -> CommandResult:
@@ -450,9 +578,170 @@ static func rack_unit_anchor(rack_def: HardwareDefinition, rack_pos: Vector3, ra
 	return rack_pos + local.rotated(Vector3.UP, deg_to_rad(rack_yaw))
 
 
-## Cable length needed between two points: straight distance × routing factor + slack.
-static func cable_length_needed(a: Vector3, b: Vector3) -> float:
-	return a.distance_to(b) * CABLE_ROUTING_FACTOR + CABLE_SLACK_M
+# ------------------------------------------------------------- cable routes --
+
+## Route of a cable plugged at both ends (cached until the world changes). See route_between.
+func cable_route(cable_id: int) -> Dictionary:
+	if _route_cache_version != _state_version:
+		_route_cache.clear()
+		_route_cache_version = _state_version
+	if not _route_cache.has(cable_id):
+		var ends: Dictionary = cable_ends.get(cable_id, {"a": "", "b": ""})
+		_route_cache[cable_id] = route_between(ends["a"], ends["b"]) if ends["b"] != "" else {"ok": false, "reason": "", "length": 0.0}
+	return _route_cache[cable_id]
+
+
+## Where a cable between two ports lies and how long it has to be (docs/INTERACTION_SYSTEM.md §9):
+##   {"ok", "reason", "length", "same_rack",
+##    "floor": PackedVector2Array (x, z) from the floor exit of `a` to that of `b` (empty inside a rack),
+##    "a"/"b": {"exit": Vector2, "height": socket height, "face", "side" (rack post: -1 / +1), "drop"}}
+## Between two devices of one rack the cable goes through the rack; otherwise each end goes from
+## its socket down to the floor next to its device (rack: down a post) and the floor part goes
+## around furniture, floor devices and the delivery zone.
+func route_between(ref_a: String, ref_b: String) -> Dictionary:
+	var da := get_device(PortRef.device_id(ref_a))
+	var db := get_device(PortRef.device_id(ref_b))
+	if da == null or db == null or _floor_object(da) == null or _floor_object(db) == null:
+		return {"ok": false, "reason": tr("Ese equipo no está instalado."), "length": 0.0}
+	var ga := da.definition.find_port_group(PortRef.group(ref_a))
+	var gb := db.definition.find_port_group(PortRef.group(ref_b))
+	if da.location == &"mounted" and db.location == &"mounted" and da.rack_id == db.rack_id:
+		return _rack_internal_route(get_device(da.rack_id), da, ga, db, gb)
+	var end_a := _cable_end(da, ga, _center2(_floor_object(db)))
+	var end_b := _cable_end(db, gb, end_a["exit"])
+	end_a = _cable_end(da, ga, end_b["exit"])
+	var floor_path := _cable_router().find_path(end_a["exit"], end_b["exit"], _floor_device_rects())
+	if floor_path.is_empty():
+		return {"ok": false, "length": 0.0, "reason": tr("no hay por dónde llevarlo por el suelo entre %s y %s (muebles o equipos cierran el paso).") % [da.display_name(), db.display_name()]}
+	var total: float = end_a["drop"] + CableRouter.length_of(floor_path) + end_b["drop"] + CABLE_SLACK_M
+	return {"ok": true, "reason": "", "length": total, "same_rack": false, "floor": floor_path, "a": end_a, "b": end_b}
+
+
+## Two devices of one rack. Same face: the cable runs in front of that face. Front <-> rear: it
+## crosses the rack through a free unit between them (or next to them); if every unit in
+## between is taken it goes round the outside of the rack side. "cross_height" (or -1 for the
+## side) tells the presentation where it crosses.
+func _rack_internal_route(rack: SimDevice, da: SimDevice, ga: PortDefinition, db: SimDevice, gb: PortDefinition) -> Dictionary:
+	var ea := _rack_post_end(rack, ga.face, _socket_height(da, ga), Vector2.INF)
+	var eb := _rack_post_end(rack, gb.face, _socket_height(db, gb), Vector2.INF)
+	var rise := absf(float(ea["height"]) - float(eb["height"]))
+	var length := 2.0 * PORT_OUT_M + rise + RACK_CABLE_SLACK_M
+	var cross := -1.0
+	if ga.face != gb.face:
+		var spec := rack.definition.get_spec(RackSpec) as RackSpec
+		var low := mini(da.rack_u, db.rack_u)
+		var high := maxi(da.rack_u + da.definition.mount_height_u - 1, db.rack_u + db.definition.mount_height_u - 1)
+		for u: int in range(maxi(1, low - 1), mini(spec.capacity_u, high + 1) + 1):
+			if units_free(rack, u, 1):
+				var y := spec.first_unit_height_m + (u - 0.5) * RACK_UNIT_M
+				if cross < 0.0 or absf(y - (ea["height"] + eb["height"]) / 2.0) < absf(cross - (ea["height"] + eb["height"]) / 2.0):
+					cross = y
+		length += rack.definition.footprint_m.y
+		if cross < 0.0:
+			length += rack.definition.footprint_m.x # round the outside of the side
+		else:
+			length += absf(cross - float(ea["height"])) + absf(cross - float(eb["height"])) - rise
+	ea["cross_height"] = cross
+	eb["cross_height"] = cross
+	return {"ok": true, "reason": "", "length": length, "same_rack": true, "floor": PackedVector2Array(), "a": ea, "b": eb}
+
+
+func _cable_router() -> CableRouter:
+	if _router == null:
+		var rects: Array[Rect2] = []
+		rects.assign(cable_obstacles)
+		if delivery_zone.has_area():
+			rects.append(delivery_zone) # kept free for the boxes
+		_router = CableRouter.new(room_bounds, rects)
+	return _router
+
+
+## The rack a mounted device is in, or the device itself if it stands in the room.
+func _floor_object(d: SimDevice) -> SimDevice:
+	if d.location == &"mounted":
+		var rack := get_device(d.rack_id)
+		return rack if rack != null and rack.location == &"placed" else null
+	return d if d.location in [&"placed", &"fixed"] else null
+
+
+func _floor_device_rects() -> Array[Rect2]:
+	var rects: Array[Rect2] = []
+	for d: SimDevice in _floor_devices(null):
+		rects.append(footprint_rect(d.definition, d.position, d.yaw_degrees))
+	return rects
+
+
+func _socket_height(d: SimDevice, group: PortDefinition) -> float:
+	if d.location == &"mounted":
+		var rack := get_device(d.rack_id)
+		var spec := rack.definition.get_spec(RackSpec) as RackSpec
+		return spec.first_unit_height_m + (d.rack_u - 1) * RACK_UNIT_M + group.height_m
+	return d.position.y + group.height_m
+
+
+func _center2(d: SimDevice) -> Vector2:
+	return Vector2(d.position.x, d.position.z)
+
+
+static func _to_world2(d: SimDevice, local: Vector2) -> Vector2:
+	var v := Vector3(local.x, 0.0, local.y).rotated(Vector3.UP, deg_to_rad(d.yaw_degrees))
+	return Vector2(d.position.x + v.x, d.position.z + v.z)
+
+
+## End of a cable at one socket: where it reaches the floor and how much cable that takes.
+func _cable_end(d: SimDevice, group: PortDefinition, toward: Vector2) -> Dictionary:
+	if d.location == &"mounted":
+		return _rack_post_end(get_device(d.rack_id), group.face, _socket_height(d, group), toward)
+	var fp := d.definition.footprint_m
+	var height := _socket_height(d, group)
+	if group.face == &"top":
+		# Plugged from above (power strip): the cable lies down on the side that saves most cable.
+		var best := {}
+		for local: Vector2 in [Vector2(0, fp.y / 2 + EXIT_GAP_M), Vector2(0, -fp.y / 2 - EXIT_GAP_M),
+				Vector2(fp.x / 2 + EXIT_GAP_M, 0), Vector2(-fp.x / 2 - EXIT_GAP_M, 0)]:
+			var exit := _to_world2(d, local)
+			var drop := PORT_OUT_M + height + local.length()
+			if best.is_empty() or drop + exit.distance_to(toward) < best["drop"] + (best["exit"] as Vector2).distance_to(toward):
+				best = {"exit": exit, "drop": drop}
+		best["height"] = height
+		best["face"] = group.face
+		best["side"] = 0.0
+		return best
+	var sign := 1.0 if group.face == &"front" else -1.0
+	var face_point := _to_world2(d, Vector2(0, sign * fp.y / 2))
+	var exit := _to_world2(d, Vector2(0, sign * (fp.y / 2 + EXIT_GAP_M)))
+	var outward := (exit - face_point).normalized()
+	var over := 0.0
+	# On top of a piece of furniture (router on the cabinet): over its top to the edge, then down.
+	var steps := 0
+	while d.position.y > 0.01 and steps < 150 and _over_furniture(exit):
+		exit += outward * 0.01
+		over += 0.01
+		steps += 1
+	return {"exit": exit, "drop": PORT_OUT_M + EXIT_GAP_M + over + height, "height": height, "face": group.face, "side": 0.0}
+
+
+## A cable leaving a rack goes to the nearer post of that face and down it to the floor.
+func _rack_post_end(rack: SimDevice, face: StringName, height: float, toward: Vector2) -> Dictionary:
+	var fp := rack.definition.footprint_m
+	var half_w := fp.x / 2.0 - RACK_POST_INSET_M
+	var local_z := (1.0 if face == &"front" else -1.0) * (fp.y / 2.0 + EXIT_GAP_M)
+	var best := {}
+	for side: float in [1.0, -1.0]:
+		var exit := _to_world2(rack, Vector2(side * half_w, local_z))
+		if best.is_empty() or (toward != Vector2.INF and exit.distance_to(toward) < (best["exit"] as Vector2).distance_to(toward)):
+			best = {"exit": exit, "side": side}
+	best["drop"] = PORT_OUT_M + half_w + height + EXIT_GAP_M
+	best["height"] = height
+	best["face"] = face
+	return best
+
+
+func _over_furniture(p: Vector2) -> bool:
+	for rect: Rect2 in cable_obstacles:
+		if rect.grow(CableRouter.CLEARANCE).has_point(p):
+			return true
+	return false
 
 
 # ---------------------------------------------------------------- power ------
@@ -566,9 +855,11 @@ func connect_cable(cable_id: int, port_ref: String) -> CommandResult:
 		var first_group := get_device(PortRef.device_id(first)).definition.find_port_group(PortRef.group(first))
 		if first_group.kind == group.kind:
 			return CommandResult.failure(tr("Un cable de corriente une una toma de la regleta con la entrada de alimentación de un equipo."))
-	var needed := cable_length_needed(device_anchor(get_device(PortRef.device_id(first))), device_anchor(target))
-	if needed > spec.length_m:
-		return CommandResult.failure(tr("El cable no llega: hacen falta unos %.1f m y este mide %.0f m.") % [needed, spec.length_m])
+	var route := route_between(first, port_ref)
+	if not route["ok"]:
+		return CommandResult.failure(tr("No se puede conectar: %s") % route["reason"])
+	if route["length"] > spec.length_m:
+		return CommandResult.failure(tr("El cable no llega: por el suelo hacen falta unos %.1f m y este mide %.0f m.") % [route["length"], spec.length_m])
 	ends["b"] = port_ref
 	port_cable[port_ref] = cable_id
 	_refresh()
@@ -607,6 +898,93 @@ func has_cables_inside(d: SimDevice) -> bool:
 	return false
 
 
+# -------------------------------------------------------------- save / load --
+
+## Everything that changes while playing (docs/ARCHITECTURE.md §7). The room itself (bounds,
+## furniture, delivery zone) belongs to the scenario and is rebuilt by it, not saved.
+## Lists are sorted by id so the same state always produces the same text.
+func save_state() -> Dictionary:
+	var device_list: Array = []
+	var ids: Array = devices.keys()
+	ids.sort()
+	for device_id: int in ids:
+		device_list.append((devices[device_id] as SimDevice).save_state())
+	var package_list: Array = []
+	var package_ids: Array = packages.keys()
+	package_ids.sort()
+	for package_id: int in package_ids:
+		var p: Dictionary = packages[package_id]
+		var pos: Vector3 = p["position"]
+		package_list.append({"id": p["id"], "device_ids": Array(p["device_ids"]), "position": [pos.x, pos.y, pos.z]})
+	var order_list: Array = []
+	for order: Dictionary in orders:
+		order_list.append({"id": order["id"], "eta": order["eta"], "groups": order["groups"].duplicate(true),
+			"total": order["total"], "delivered": order["delivered"]})
+	var cable_list: Array = []
+	var cable_ids: Array = cable_ends.keys()
+	cable_ids.sort()
+	for cable_id: int in cable_ids:
+		cable_list.append({"cable": cable_id, "a": cable_ends[cable_id]["a"], "b": cable_ends[cable_id]["b"]})
+	return {
+		"time_minutes": time_minutes,
+		"speed": speed,
+		"credits": credits,
+		"xp": xp,
+		"next_id": _next_id,
+		"devices": device_list,
+		"packages": package_list,
+		"orders": order_list,
+		"cables": cable_list,
+		"mission": mission.save_state() if mission != null else {},
+	}
+
+
+## Replaces the dynamic state with a save_state() dictionary (also after a JSON round trip,
+## where every number is a float and dictionary keys are strings).
+func load_state(data: Dictionary) -> void:
+	devices.clear()
+	packages.clear()
+	orders.clear()
+	cable_ends.clear()
+	port_cable.clear()
+	time_minutes = float(data["time_minutes"])
+	speed = float(data["speed"])
+	credits = int(data["credits"])
+	xp = int(data["xp"])
+	_next_id = int(data["next_id"])
+	for saved: Dictionary in data["devices"]:
+		var d := SimDevice.from_state(saved, catalog)
+		if d != null:
+			devices[d.id] = d
+	for saved: Dictionary in data["packages"]:
+		var ids: Array[int] = []
+		for device_id: Variant in saved["device_ids"]:
+			ids.append(int(device_id))
+		var p: Array = saved["position"]
+		packages[int(saved["id"])] = {"id": int(saved["id"]), "device_ids": ids,
+			"position": Vector3(float(p[0]), float(p[1]), float(p[2]))}
+	for saved: Dictionary in data["orders"]:
+		var groups: Array = []
+		for group: Array in saved["groups"]:
+			var ids: Array[int] = []
+			for device_id: Variant in group:
+				ids.append(int(device_id))
+			groups.append(ids)
+		orders.append({"id": int(saved["id"]), "eta": float(saved["eta"]), "groups": groups,
+			"total": int(saved["total"]), "delivered": bool(saved["delivered"])})
+	for saved: Dictionary in data["cables"]:
+		var cable_id := int(saved["cable"])
+		var ends := {"a": String(saved["a"]), "b": String(saved["b"])}
+		cable_ends[cable_id] = ends
+		port_cable[ends["a"]] = cable_id
+		if ends["b"] != "":
+			port_cable[ends["b"]] = cable_id
+	var saved_mission: Dictionary = data.get("mission", {})
+	mission = MissionTracker.from_state(saved_mission) if not saved_mission.is_empty() else null
+	_gather_packages() # boxes always wait in one stack at the (current) delivery spot
+	_emit(&"state_loaded", {})
+
+
 # ----------------------------------------------------------------- helpers ---
 
 func _first_running(category: StringName) -> SimDevice:
@@ -629,4 +1007,5 @@ func emit_event(type: StringName, data: Dictionary = {}) -> void:
 
 
 func _emit(type: StringName, data: Dictionary) -> void:
+	_state_version += 1
 	event_emitted.emit(type, data)

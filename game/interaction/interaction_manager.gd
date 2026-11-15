@@ -158,8 +158,8 @@ func _click_world(screen_pos: Vector2) -> void:
 	var collider := hit["collider"] as Node
 	if collider.has_meta("computer_id"):
 		_begin(&"computer", collider.get_meta("computer_id"))
-	elif collider.has_meta("package_id"):
-		_begin(&"package", collider.get_meta("package_id"))
+	elif collider.has_meta("package_stack"):
+		_begin(&"package", session.world.top_package_id())
 	elif collider.has_meta("device_id"):
 		var d := session.world.get_device(collider.get_meta("device_id"))
 		if d.location == &"mounted":
@@ -224,8 +224,18 @@ func _on_arrived() -> void:
 	session.character.face_towards(session.target_center(_target_kind, _target_id))
 	match _target_kind:
 		&"package":
-			var r := session.world.open_package(_target_id)
-			session.hud.show_toast(r.message, r.ok)
+			var world := session.world
+			var r := world.open_package(_target_id if world.packages.has(_target_id) else world.top_package_id())
+			var left := world.packages.size()
+			var text: String = r.message
+			if r.ok:
+				if left == 0:
+					text += " " + TranslationServer.translate("No quedan más cajas.")
+				elif left == 1:
+					text += " " + TranslationServer.translate("Queda 1 caja.")
+				else:
+					text += " " + TranslationServer.translate("Quedan %d cajas.") % left
+			session.hud.show_toast(text, r.ok)
 			mode = Mode.OVERVIEW
 		&"computer":
 			_focus(session.screen_anchor(), Mode.SCREEN)
@@ -590,10 +600,13 @@ func _update_ghost() -> void:
 			(_zone_meshes[i].material_override as StandardMaterial3D).albedo_color = Color(color, ZONE_FRONT_ALPHA if i == 0 else ZONE_REAR_ALPHA)
 		text += TranslationServer.translate(" · La zona clara del suelo marca el frente del rack.")
 		if problem == "":
-			var def := session.world.get_device(_ghost_device).definition
-			var power := session.world.rack_power_estimate(def, _ghost_pos, _ghost_yaw)
-			if not power.is_empty() and power["needed"] > power["longest"]:
-				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %.1f m de cable de corriente y el más largo mide %.0f m.") % [power["needed"], power["longest"]]
+			var power := session.world.rack_power_estimate(_ghost_device, _ghost_pos, _ghost_yaw)
+			if not power.is_empty() and power["needed"] == INF:
+				text += "\n" + TranslationServer.translate("⚠ Desde aquí no hay por dónde llevar un cable de corriente hasta la regleta.")
+			elif not power.is_empty() and power["needed"] > power["longest"]:
+				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %.1f m de cable de corriente y el más largo de la tienda mide %.0f m.") % [power["needed"], power["longest"]]
+			elif not power.is_empty() and power["needed"] > power["included"]:
+				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %.1f m de cable de corriente; el que traen mide %.0f m (en la tienda hay de %.0f m).") % [power["needed"], power["included"], power["longest"]]
 	session.hud.set_tool_text(text)
 
 

@@ -2,9 +2,9 @@ extends TestCase
 ## The first mission played only through simulation commands (docs/TEST_PLAN.md H7-01):
 ## two different valid solutions, and one negative case per requirement.
 
-## Same spot as the automated walkthrough: front towards the room, rear towards the right wall.
+## Same spot as the automated walkthrough: front towards the right wall, rear towards the room.
 const RACK_POS := Vector3(0.9, 0.0, 0.5)
-const RACK_YAW := 270.0
+const RACK_YAW := 90.0 ## Rear (power) towards the room: the 3 m cords that come with the equipment reach the strip.
 
 var world: SimWorld
 
@@ -53,7 +53,7 @@ func _connect(item_id: StringName, a: String, b: String) -> void:
 
 ## Rack placed, switch U9 + server U5 mounted and powered on. Returns [rack, switch, server].
 func _build_rack() -> Array[SimDevice]:
-	var shopping: Array[StringName] = [&"rack_12u_open", &"switch_16p_1u", &"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_3m"]
+	var shopping: Array[StringName] = [&"rack_12u_open", &"switch_16p_1u", &"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_5m", &"cable_cat6_5m"]
 	_buy_and_unpack(shopping)
 	var rack := _first_in_inventory(&"rack_12u_open")
 	var sw := _first_in_inventory(&"switch_16p_1u")
@@ -96,11 +96,11 @@ func test_solution_a_server_via_switch_pc_on_router() -> void:
 	var srv := parts[2]
 	var router := _one(&"router")
 	_connect(&"cable_cat6_1m", PortRef.make(srv.id, &"lan", 0), PortRef.make(sw.id, &"lan", 0))
-	_connect(&"cable_cat6_3m", PortRef.make(sw.id, &"lan", 1), PortRef.make(router.id, &"lan", 1))
+	_connect(&"cable_cat6_5m", PortRef.make(sw.id, &"lan", 1), PortRef.make(router.id, &"lan", 1))
 	assert_false(world.mission.completed, "not complete before the IP")
 	assert_eq(_root_shell(srv, "ip address add 192.168.1.50/24 dev eth0"), "", "ip add is silent")
 	assert_true(world.mission.completed, "mission completed")
-	var spent := 220 + 90 + 480 + 6 + 9
+	var spent := 220 + 90 + 480 + 6 + 12 + 12 # rack, switch, server, 1 m and two 5 m cables
 	assert_eq(world.credits, start_credits - spent + 600, "reward credited once")
 	assert_eq(world.xp, 150, "xp granted")
 	assert_eq(world.level(), 2, "level up")
@@ -117,8 +117,8 @@ func test_solution_b_pc_moved_to_switch() -> void:
 	var pc := _one(&"computer")
 	var router := _one(&"router")
 	assert_true(world.disconnect_port(PortRef.make(pc.id, &"lan", 0)).ok, "unplug PC from router")
-	_connect(&"cable_cat6_3m", PortRef.make(pc.id, &"lan", 0), PortRef.make(sw.id, &"lan", 4))
-	_connect(&"cable_cat6_3m", PortRef.make(sw.id, &"lan", 5), PortRef.make(router.id, &"lan", 2))
+	_connect(&"cable_cat6_5m", PortRef.make(pc.id, &"lan", 0), PortRef.make(sw.id, &"lan", 4))
+	_connect(&"cable_cat6_5m", PortRef.make(sw.id, &"lan", 5), PortRef.make(router.id, &"lan", 2))
 	_connect(&"cable_cat6_1m", PortRef.make(srv.id, &"lan", 1), PortRef.make(sw.id, &"lan", 6))
 	_root_shell(srv, "ip address add 192.168.1.60/24 dev eth1")
 	assert_true(world.mission.completed, "mission completed with a different topology and port")
@@ -129,7 +129,7 @@ func test_solution_b_pc_moved_to_switch() -> void:
 func test_no_ip_means_no_communication() -> void:
 	var parts := _build_rack()
 	_connect(&"cable_cat6_1m", PortRef.make(parts[2].id, &"lan", 0), PortRef.make(parts[1].id, &"lan", 0))
-	_connect(&"cable_cat6_3m", PortRef.make(parts[1].id, &"lan", 1), PortRef.make(_one(&"router").id, &"lan", 1))
+	_connect(&"cable_cat6_5m", PortRef.make(parts[1].id, &"lan", 1), PortRef.make(_one(&"router").id, &"lan", 1))
 	assert_false(_requirement(&"server_ip"), "no IP yet")
 	assert_false(_requirement(&"pc_server_ping"), "cannot communicate without IP")
 
@@ -137,7 +137,7 @@ func test_no_ip_means_no_communication() -> void:
 func test_wrong_subnet_fails() -> void:
 	var parts := _build_rack()
 	_connect(&"cable_cat6_1m", PortRef.make(parts[2].id, &"lan", 0), PortRef.make(parts[1].id, &"lan", 0))
-	_connect(&"cable_cat6_3m", PortRef.make(parts[1].id, &"lan", 1), PortRef.make(_one(&"router").id, &"lan", 1))
+	_connect(&"cable_cat6_5m", PortRef.make(parts[1].id, &"lan", 1), PortRef.make(_one(&"router").id, &"lan", 1))
 	_root_shell(parts[2], "ip address add 10.0.0.5/8 dev eth0")
 	assert_false(_requirement(&"server_ip"), "10.0.0.5 is not in the home network")
 	assert_false(_requirement(&"pc_server_ping"), "different subnets do not talk without routing")
@@ -146,7 +146,7 @@ func test_wrong_subnet_fails() -> void:
 func test_ip_conflict_fails() -> void:
 	var parts := _build_rack()
 	_connect(&"cable_cat6_1m", PortRef.make(parts[2].id, &"lan", 0), PortRef.make(parts[1].id, &"lan", 0))
-	_connect(&"cable_cat6_3m", PortRef.make(parts[1].id, &"lan", 1), PortRef.make(_one(&"router").id, &"lan", 1))
+	_connect(&"cable_cat6_5m", PortRef.make(parts[1].id, &"lan", 1), PortRef.make(_one(&"router").id, &"lan", 1))
 	var pc_ip := IPv4.format(NetworkEngine.device_ips(world, _one(&"computer"))[0])
 	_root_shell(parts[2], "ip address add %s/24 dev eth0" % pc_ip)
 	assert_false(_requirement(&"server_ip"), "duplicated IP %s must not count" % pc_ip)
@@ -162,7 +162,7 @@ func test_switch_without_uplink_fails() -> void:
 
 func test_server_straight_to_router_does_not_count_as_switch() -> void:
 	var parts := _build_rack()
-	_connect(&"cable_cat6_3m", PortRef.make(parts[2].id, &"lan", 0), PortRef.make(_one(&"router").id, &"lan", 1))
+	_connect(&"cable_cat6_5m", PortRef.make(parts[2].id, &"lan", 0), PortRef.make(_one(&"router").id, &"lan", 1))
 	_root_shell(parts[2], "ip address add 192.168.1.50/24 dev eth0")
 	assert_true(_requirement(&"pc_server_ping"), "they do communicate through the router")
 	assert_false(_requirement(&"server_to_switch"), "but the mission asks for the switch")

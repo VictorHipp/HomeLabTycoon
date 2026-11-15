@@ -39,6 +39,44 @@ func display_name() -> String:
 	return definition.display_name()
 
 
+## Serialisable state (docs/ARCHITECTURE.md §7). The definition is saved by catalog id.
+func save_state() -> Dictionary:
+	return {
+		"id": id,
+		"item": String(definition.id),
+		"location": String(location),
+		"position": [position.x, position.y, position.z],
+		"yaw": yaw_degrees,
+		"rack_id": rack_id,
+		"rack_u": rack_u,
+		"power_switch_on": power_switch_on,
+		"state": String(state),
+		"boot_left_minutes": boot_left_minutes,
+		"host": host.save_state() if host != null else null,
+	}
+
+
+## Rebuilds a device from save_state() output (JSON numbers arrive as floats).
+static func from_state(data: Dictionary, catalog: Catalog) -> SimDevice:
+	var def := catalog.get_item(StringName(data["item"]))
+	if def == null:
+		push_error("SimDevice: unknown catalog item %s in save" % data["item"])
+		return null
+	var d := SimDevice.new(int(data["id"]), def)
+	d.location = StringName(data["location"])
+	var p: Array = data["position"]
+	d.position = Vector3(float(p[0]), float(p[1]), float(p[2]))
+	d.yaw_degrees = float(data["yaw"])
+	d.rack_id = int(data["rack_id"])
+	d.rack_u = int(data["rack_u"])
+	d.power_switch_on = bool(data["power_switch_on"])
+	d.state = StringName(data["state"])
+	d.boot_left_minutes = float(data["boot_left_minutes"])
+	if d.host != null and data.get("host") is Dictionary:
+		d.host.load_state(data["host"])
+	return d
+
+
 ## All port references of this device, in definition order.
 func port_refs() -> Array[String]:
 	var refs: Array[String] = []

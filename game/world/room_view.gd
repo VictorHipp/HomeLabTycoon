@@ -63,7 +63,8 @@ func build() -> void:
 		piece.rotation_degrees.y = spec[2]
 		nav_region.add_child(piece)
 		if spec[3]:
-			ModelUtil.add_box_body(piece, ModelUtil.local_aabb(piece), Layers.FURNITURE)
+			ModelUtil.add_part_bodies(piece, Layers.FURNITURE) # solid parts (character, cables, clicks)
+			ModelUtil.add_box_body(piece, ModelUtil.local_aabb(piece), Layers.NAV_BLOCK) # navigation only
 
 	_walls = find_walls(room)
 	request_bake()

@@ -20,3 +20,8 @@ enum Kind {
 @export var count: int = 1 ## How many ports of this kind in the group.
 @export var speed_mbps: int = 1000 ## Nominal maximum speed. 0 for power ports.
 @export var poe_budget_watts: float = 0.0 ## Total PoE budget offered by the group (0 = no PoE).
+## Side of the device where the sockets are: front (+Z of the model), rear (-Z) or top (+Y).
+## Must match the model markers (checked by tests/unit/test_catalog.gd). Used to route cables.
+@export var face: StringName = &"rear"
+## Height of the sockets above the bottom of the device, in metres (cable lengths).
+@export var height_m: float = 0.0

@@ -1,14 +1,22 @@
 class_name CableRenderer
 extends Node3D
-## Draws every cable of the world as a sagging tube between its two ports
-## (docs/INTERACTION_SYSTEM.md §9). A cable with a loose end hangs from its plugged end.
-## Rebuilt on cable events only; meshes are generated once per change.
+## Draws every cable along the route computed by the simulation (SimWorld.cable_route,
+## docs/INTERACTION_SYSTEM.md §9): out of the socket, to the floor next to its device (racks: down
+## a post), along the floor around furniture, and up to the other socket. Corners are rounded so
+## it reads as a cable. A cable with a loose end hangs from its plugged end and lies on the floor.
+## The tubes are thicker than real cables on purpose: they must be visible from the overview.
 
 const COLOR_COPPER := Color("#3B82C4")
-const COLOR_POWER := Color("#151515")
-const SEGMENTS := 18
-const SIDES := 6
+const COLOR_POWER := Color("#202020")
+const RADIUS_DATA := 0.008
+const RADIUS_POWER := 0.0095
+const FLOOR_Y := 0.016 ## Bottom of a cable lying on the floor (above the rug, 12.5 mm).
+const SIDES := 8
+const CORNER_RADIUS := 0.05
+const SIDE_OUTSIDE_RACK := 0.015 ## Gap between a rack side and a cable that goes round it.
 
+## cable id -> PackedVector3Array actually drawn (for checks: tests and the walkthrough).
+var paths: Dictionary = {}
 var _materials: Dictionary = {}
 
 
@@ -16,53 +24,127 @@ var _materials: Dictionary = {}
 func rebuild(world: SimWorld, port_transform: Callable) -> void:
 	for child: Node in get_children():
 		child.queue_free()
+	paths.clear()
 	for cable_id: int in world.cable_ends:
 		var ends: Dictionary = world.cable_ends[cable_id]
 		var spec := world.get_device(cable_id).definition.get_spec(CableSpec) as CableSpec
+		var radius := RADIUS_POWER if spec.media == &"power" else RADIUS_DATA
 		var a: Dictionary = port_transform.call(ends["a"])
 		if not a["found"]:
 			continue
-		var a_xf: Transform3D = a["transform"]
-		var p0 := a_xf.origin
-		var out0 := a_xf.basis.z.normalized()
-		var p3: Vector3
-		var out3: Vector3
+		var path: PackedVector3Array
 		if ends["b"] == "":
-			p3 = p0 + out0 * 0.12 + Vector3(0.0, -0.35, 0.0)
-			out3 = Vector3.UP
+			path = _loose(a["transform"], radius)
 		else:
 			var b: Dictionary = port_transform.call(ends["b"])
-			if not b["found"]:
+			var route := world.cable_route(cable_id)
+			if not b["found"] or not route["ok"]:
 				continue
-			var b_xf: Transform3D = b["transform"]
-			p3 = b_xf.origin
-			out3 = b_xf.basis.z.normalized()
-		var radius := 0.005 if spec.media == &"power" else 0.0035
-		var color := COLOR_POWER if spec.media == &"power" else COLOR_COPPER
+			path = _routed(world, route, ends, a["transform"], b["transform"], radius)
+		var smooth := _rounded(path)
+		paths[cable_id] = smooth
 		var mesh_instance := MeshInstance3D.new()
-		mesh_instance.mesh = _tube(p0, out0, p3, out3, radius)
-		mesh_instance.material_override = _material(color)
+		mesh_instance.mesh = _tube(smooth, radius)
+		mesh_instance.material_override = _material(COLOR_POWER if spec.media == &"power" else COLOR_COPPER)
 		mesh_instance.name = "Cable%d" % cable_id
 		add_child(mesh_instance)
 
 
-func _tube(p0: Vector3, out0: Vector3, p3: Vector3, out3: Vector3, radius: float) -> ArrayMesh:
-	var dist := p0.distance_to(p3)
-	var sag := clampf(dist * 0.3, 0.04, 0.45)
-	var c1 := p0 + out0 * 0.1 + Vector3(0.0, -sag, 0.0)
-	var c2 := p3 + out3 * 0.1 + Vector3(0.0, -sag, 0.0)
-	var points: Array[Vector3] = []
-	for i: int in SEGMENTS + 1:
-		var t := float(i) / SEGMENTS
-		var u := 1.0 - t
-		points.append(u * u * u * p0 + 3.0 * u * u * t * c1 + 3.0 * u * t * t * c2 + t * t * t * p3)
+func _routed(world: SimWorld, route: Dictionary, ends: Dictionary, a_xf: Transform3D, b_xf: Transform3D, radius: float) -> PackedVector3Array:
+	var y := FLOOR_Y + radius
+	if route["same_rack"]:
+		return _inside_rack(world, route, ends, a_xf, b_xf)
+	var pts := _to_floor(route["a"], a_xf, y)
+	for p: Vector2 in route["floor"]:
+		pts.append(Vector3(p.x, y, p.y))
+	var tail := _to_floor(route["b"], b_xf, y)
+	tail.reverse()
+	pts.append_array(tail)
+	return _dedupe(pts)
+
+
+## Socket -> straight out -> (at socket height) above the floor exit -> down to the floor.
+func _to_floor(end: Dictionary, socket_xf: Transform3D, y: float) -> PackedVector3Array:
+	var socket := socket_xf.origin
+	var out := socket_xf.basis.z.normalized()
+	var p1 := socket + out * SimWorld.PORT_OUT_M
+	var exit2: Vector2 = end["exit"]
+	return PackedVector3Array([socket, p1, Vector3(exit2.x, p1.y, exit2.y), Vector3(exit2.x, y, exit2.y)])
+
+
+## Between two devices of one rack: in front of the face, across a free unit, or round the side.
+func _inside_rack(world: SimWorld, route: Dictionary, ends: Dictionary, a_xf: Transform3D, b_xf: Transform3D) -> PackedVector3Array:
+	var a_out := a_xf.origin + a_xf.basis.z.normalized() * SimWorld.PORT_OUT_M
+	var b_out := b_xf.origin + b_xf.basis.z.normalized() * SimWorld.PORT_OUT_M
+	var pts := PackedVector3Array([a_xf.origin, a_out])
+	var cross: float = route["a"].get("cross_height", -1.0)
+	if route["a"]["face"] == route["b"]["face"]:
+		pass # straight up or down in front of the face
+	elif cross >= 0.0:
+		pts.append(Vector3(a_out.x, cross, a_out.z))
+		pts.append(Vector3(b_out.x, cross, b_out.z))
+	else:
+		var rack := world.get_device(world.get_device(PortRef.device_id(ends["a"])).rack_id)
+		var basis := Basis(Vector3.UP, deg_to_rad(rack.yaw_degrees))
+		var la := basis.inverse() * (a_out - rack.position)
+		var lb := basis.inverse() * (b_out - rack.position)
+		var sx := rack.definition.footprint_m.x / 2.0 + SIDE_OUTSIDE_RACK
+		pts.append(rack.position + basis * Vector3(sx, la.y, la.z))
+		pts.append(rack.position + basis * Vector3(sx, lb.y, lb.z))
+	pts.append(b_out)
+	pts.append(b_xf.origin)
+	return _dedupe(pts)
+
+
+## A cable plugged at one end only: hangs down and lies on the floor away from the device.
+func _loose(a_xf: Transform3D, radius: float) -> PackedVector3Array:
+	var socket := a_xf.origin
+	var out := a_xf.basis.z.normalized()
+	var p1 := socket + out * 0.06
+	var flat := Vector3(out.x, 0.0, out.z)
+	flat = flat.normalized() if flat.length() > 0.1 else Vector3.FORWARD
+	var y := FLOOR_Y + radius
+	var down := Vector3(p1.x, y, p1.z) + flat * 0.05
+	return PackedVector3Array([socket, p1, down, down + flat * 0.25 + flat.cross(Vector3.UP) * 0.08])
+
+
+static func _dedupe(pts: PackedVector3Array) -> PackedVector3Array:
+	var result := PackedVector3Array()
+	for p: Vector3 in pts:
+		if result.is_empty() or result[result.size() - 1].distance_to(p) > 0.002:
+			result.append(p)
+	return result
+
+
+## Replaces every corner by a short curve (quadratic Bézier) so the cable bends smoothly.
+static func _rounded(pts: PackedVector3Array) -> PackedVector3Array:
+	if pts.size() < 3:
+		return pts
+	var result := PackedVector3Array([pts[0]])
+	for i: int in range(1, pts.size() - 1):
+		var prev := pts[i - 1]
+		var corner := pts[i]
+		var next := pts[i + 1]
+		var r := minf(CORNER_RADIUS, minf(prev.distance_to(corner), corner.distance_to(next)) * 0.45)
+		var p_in := corner + (prev - corner).normalized() * r
+		var p_out := corner + (next - corner).normalized() * r
+		for k: int in 6:
+			var t := k / 5.0
+			result.append(p_in.lerp(corner, t).lerp(corner.lerp(p_out, t), t))
+	result.append(pts[pts.size() - 1])
+	return _dedupe(result)
+
+
+## Tube along the polyline with rotation-minimising frames (no twisting at vertical runs).
+func _tube(points: PackedVector3Array, radius: float) -> ArrayMesh:
 	var rings: Array[PackedVector3Array] = []
+	var normal := Vector3.ZERO
 	for i: int in points.size():
 		var tangent := (points[mini(i + 1, points.size() - 1)] - points[maxi(i - 1, 0)]).normalized()
-		var normal := tangent.cross(Vector3.UP)
-		if normal.length() < 0.01:
-			normal = tangent.cross(Vector3.RIGHT)
-		normal = normal.normalized()
+		if normal == Vector3.ZERO:
+			normal = tangent.cross(Vector3.UP if absf(tangent.y) < 0.9 else Vector3.RIGHT).normalized()
+		else:
+			normal = (normal - tangent * normal.dot(tangent)).normalized()
 		var binormal := tangent.cross(normal).normalized()
 		var ring := PackedVector3Array()
 		for s: int in SIDES:
@@ -85,7 +167,7 @@ func _material(color: Color) -> StandardMaterial3D:
 	if not _materials.has(key):
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = color
-		mat.roughness = 0.6
+		mat.roughness = 0.55
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_materials[key] = mat
 	return _materials[key]

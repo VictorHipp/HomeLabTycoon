@@ -7,11 +7,13 @@
 [sub_resource type="Resource" id="Resource_43xdm"]
 script = ExtResource("1_7in2j")
 id = &"lan"
+height_m = 0.022
 count = 2
 
 [sub_resource type="Resource" id="Resource_72a7n"]
 script = ExtResource("1_7in2j")
 id = &"psu"
+height_m = 0.022
 kind = 6
 speed_mbps = 0
 

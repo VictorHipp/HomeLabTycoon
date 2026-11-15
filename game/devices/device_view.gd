@@ -8,8 +8,10 @@ const COLOR_GREEN := Color("#4ADE80")
 const COLOR_AMBER := Color("#F5A524")
 const COLOR_RED := Color("#EF4444")
 const COLOR_OFF := Color("#2A2F38")
-const PORT_SIZE_DATA := Vector3(0.02, 0.018, 0.02)
-const PORT_SIZE_POWER := Vector3(0.04, 0.035, 0.04)
+## Click areas of the sockets: thin in depth, so from a steep close-up camera the socket above
+## never catches the click meant for the one below (switch ports are 17 mm apart).
+const PORT_SIZE_DATA := Vector3(0.018, 0.015, 0.006)
+const PORT_SIZE_POWER := Vector3(0.036, 0.03, 0.01)
 
 static var _led_materials: Dictionary = {}
 

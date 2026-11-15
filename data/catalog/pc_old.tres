@@ -7,10 +7,12 @@
 [sub_resource type="Resource" id="Resource_pocyb"]
 script = ExtResource("1_dl2gc")
 id = &"lan"
+height_m = 0.22
 
 [sub_resource type="Resource" id="Resource_cs1mw"]
 script = ExtResource("1_dl2gc")
 id = &"psu"
+height_m = 0.35
 kind = 6
 speed_mbps = 0
 

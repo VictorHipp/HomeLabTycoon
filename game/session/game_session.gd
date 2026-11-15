@@ -25,13 +25,17 @@ var screen: ComputerScreen
 var interaction: InteractionManager
 var cables: CableRenderer
 var device_views: Dictionary = {} ## device id -> DeviceView
-var package_views: Dictionary = {} ## package id -> PackageView
+var package_stack: PackageView ## All waiting boxes, stacked in the delivery zone.
 var monitor: Node3D
 var pc_id: int = -1
 
 var _views_dirty: bool = true
 var _hud_timer: float = 0.0
 var _click_marker: MeshInstance3D
+
+## A loaded save waiting for the scene to be rebuilt (load = reload the scene, so no view or
+## panel keeps state from the previous game).
+static var _pending_load: Dictionary = {}
 
 
 func _ready() -> void:
@@ -40,7 +44,9 @@ func _ready() -> void:
 	NavigationServer3D.map_set_cell_size(nav_map, 0.05)
 	NavigationServer3D.map_set_cell_height(nav_map, 0.05)
 	get_viewport().msaa_3d = Viewport.MSAA_4X
-	world = BedroomScenario.create()
+	var loading := _pending_load
+	_pending_load = {}
+	world = BedroomScenario.restore(loading["sim"]) if not loading.is_empty() else BedroomScenario.create()
 	pc_id = world.devices_of(&"computer")[0].id
 	_build_environment()
 	room = RoomView.new()
@@ -48,6 +54,10 @@ func _ready() -> void:
 	add_child(room)
 	room.build()
 	_build_pc_extras()
+	_build_delivery_zone()
+	package_stack = PackageView.new()
+	room.objects.add_child(package_stack)
+	package_stack.setup()
 	cables = CableRenderer.new()
 	cables.name = "Cables"
 	add_child(cables)
@@ -79,13 +89,70 @@ func _ready() -> void:
 	world.event_emitted.connect(_on_world_event)
 	_sync_views()
 	hud.refresh()
-	hud.show_toast(TranslationServer.translate("Bienvenido a tu habitación. Haz clic en el ordenador para abrir la tienda y empezar la misión."))
+	if loading.is_empty():
+		hud.show_toast(TranslationServer.translate("Bienvenido a tu habitación. Haz clic en el ordenador para abrir la tienda y empezar la misión."))
+	else:
+		_apply_presentation(loading.get("session", {}))
+		var note := ""
+		if not world.packages.is_empty() and world.delivery_zone_blocked():
+			note = " " + TranslationServer.translate("La zona de entregas estaba ocupada: las cajas esperan junto a ella.")
+		hud.show_toast(TranslationServer.translate("Partida cargada.") + note)
 	print("HomeLabTycoon boot OK | Godot %s | first mission test" % Engine.get_version_info()["string"])
-	var walkthrough_dir := WalkthroughDriver.requested_dir()
-	if walkthrough_dir != "":
-		var driver := WalkthroughDriver.new()
-		add_child(driver)
-		driver.start(self, walkthrough_dir)
+	if WalkthroughDriver.requested_dir() != "":
+		WalkthroughDriver.attach(self)
+
+
+# --------------------------------------------------------------- save / load --
+
+## Presentation part of the save: where the character stands and how the camera looks.
+func capture_presentation() -> Dictionary:
+	var p := character.save_position()
+	return {
+		"character": {"position": [p.x, p.y, p.z], "facing": character.model.rotation.y},
+		"camera": {"yaw": rig.target_yaw_deg, "pitch": rig.target_pitch_deg, "distance": rig.target_distance,
+			"focus": [rig.target_focus.x, rig.target_focus.y, rig.target_focus.z]},
+	}
+
+
+func _apply_presentation(data: Dictionary) -> void:
+	var c: Dictionary = data.get("character", {})
+	if c.has("position"):
+		var p: Array = c["position"]
+		character.global_position = Vector3(float(p[0]), 0.0, float(p[2]))
+		character.model.rotation.y = float(c.get("facing", 0.0))
+		# The navigation mesh is baked after loading: then make sure the character stands on it.
+		room.nav_region.bake_finished.connect(_snap_character_to_floor, CONNECT_ONE_SHOT)
+	var cam: Dictionary = data.get("camera", {})
+	if cam.has("yaw"):
+		rig.target_yaw_deg = float(cam["yaw"])
+		rig.target_pitch_deg = float(cam["pitch"])
+		rig.target_distance = float(cam["distance"])
+		var f: Array = cam["focus"]
+		rig.target_focus = Vector3(float(f[0]), float(f[1]), float(f[2]))
+		rig.snap()
+
+
+func _snap_character_to_floor() -> void:
+	var map := get_world_3d().navigation_map
+	var closest := NavigationServer3D.map_get_closest_point(map, character.global_position)
+	if Vector2(closest.x - character.global_position.x, closest.z - character.global_position.z).length() > 0.05:
+		character.global_position = Vector3(closest.x, 0.0, closest.z)
+
+
+## Returns {"ok", "message"}.
+func save_game() -> Dictionary:
+	return SaveService.write(SaveGame.build(world, capture_presentation()))
+
+
+## Reads the save and rebuilds the scene with it. Returns {"ok", "message"}.
+func load_game() -> Dictionary:
+	var r := SaveService.read()
+	if not r["ok"]:
+		return r
+	_pending_load = r["document"]
+	get_tree().paused = false
+	get_tree().reload_current_scene.call_deferred()
+	return {"ok": true, "message": TranslationServer.translate("Cargando la partida…")}
 
 
 func _process(delta: float) -> void:
@@ -108,7 +175,12 @@ func _on_world_event(type: StringName, data: Dictionary) -> void:
 	_views_dirty = true
 	match type:
 		&"package_delivered":
-			hud.show_toast(TranslationServer.translate("¡Ha llegado tu pedido! Los paquetes están junto a la puerta."))
+			hud.show_toast(TranslationServer.translate("¡Ha llegado tu pedido! Las cajas están en la zona de entregas, junto a la puerta (×%d).") % world.packages.size())
+			# If the character stands where the boxes appear, step it out once the floor is re-baked.
+			var spot := world.delivery_spot()
+			var c := character.global_position
+			if Rect2(spot.x - 0.5, spot.z - 0.45, 1.0, 0.9).has_point(Vector2(c.x, c.z)):
+				room.nav_region.bake_finished.connect(_snap_character_to_floor, CONNECT_ONE_SHOT)
 		&"device_running":
 			var d := world.get_device(data["device_id"])
 			if d.definition.has_power_button or d.definition.category == &"switch":
@@ -147,18 +219,11 @@ func _sync_views() -> void:
 			if not view.global_transform.is_equal_approx(before):
 				structural = true
 			view.refresh(world)
-	for package_id: int in world.packages:
-		if not package_views.has(package_id):
-			var pv := PackageView.new()
-			room.objects.add_child(pv)
-			pv.setup(world.packages[package_id])
-			package_views[package_id] = pv
-			structural = true
-	for package_id: int in package_views.keys():
-		if not world.packages.has(package_id):
-			(package_views[package_id] as Node).queue_free()
-			package_views.erase(package_id)
-			structural = true
+	var spot := world.delivery_spot()
+	if not world.packages.is_empty():
+		spot = world.packages[world.top_package_id()]["position"]
+	if package_stack.refresh(world.packages.size(), spot):
+		structural = true
 	cables.rebuild(world, port_global_transform)
 	if structural:
 		room.request_bake()
@@ -190,8 +255,8 @@ func stand_point(kind: StringName, target_id: int) -> Vector3:
 		&"computer":
 			return PC_STAND
 		&"package":
-			var pv := package_views.get(target_id) as PackageView
-			return pv.global_position + (Vector3.ZERO - pv.global_position).normalized() * 0.55
+			var p := package_stack.global_position
+			return clamp_to_room(p + Vector3(-p.x, 0.0, -p.z).normalized() * 0.55, STAND_ROOM_MARGIN)
 		&"rack":
 			var rack_view := device_views[target_id] as DeviceView
 			var marker := ModelUtil.marker_transform(rack_view.model, "STAND_POINT")
@@ -207,7 +272,7 @@ func target_center(kind: StringName, target_id: int) -> Vector3:
 		&"computer":
 			return MONITOR_POSITION
 		&"package":
-			return (package_views[target_id] as Node3D).global_position
+			return package_stack.global_position + Vector3(0.0, 0.3, 0.0)
 	return (device_views[target_id] as DeviceView).global_bounds_center()
 
 
@@ -337,6 +402,33 @@ func _build_pc_extras() -> void:
 	keyboard.add_child(ModelUtil.instance_model(KEYBOARD_MODEL))
 	room.objects.add_child(keyboard)
 	ModelUtil.add_box_body(keyboard, ModelUtil.local_aabb(keyboard.get_child(0) as Node3D), Layers.DEVICES).set_meta("computer_id", pc_id)
+
+
+## Floor mark of the reserved delivery zone (always visible, so the player knows it is kept free).
+func _build_delivery_zone() -> void:
+	var zone := world.delivery_zone
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(UiStyle.MUSTARD, 0.28)
+	var mark := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = zone.size
+	mark.mesh = plane
+	mark.material_override = mat
+	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mark.position = Vector3(zone.get_center().x, 0.006, zone.get_center().y)
+	mark.name = "DeliveryZone"
+	room.add_child(mark)
+	var text := Label3D.new()
+	text.text = TranslationServer.translate("ENTREGAS")
+	text.font_size = 48
+	text.pixel_size = 0.0025
+	text.modulate = Color(UiStyle.INK, 0.75)
+	text.outline_size = 0
+	text.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+	text.position = Vector3(0.0, 0.002, zone.size.y / 2.0 - 0.07)
+	mark.add_child(text)
 
 
 func _build_click_marker() -> void:

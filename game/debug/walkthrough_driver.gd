@@ -17,12 +17,19 @@ extends Node
 const STEP_TIMEOUT := 25.0
 const SCENARIOS: Array[String] = ["basic", "wall", "far", "blocking"]
 const GOOD_SPOT := Vector3(0.9, 0.0, 0.5)
-const GOOD_YAW := 270.0
-const WALL_SPOT := Vector3(1.3, 0.0, 0.5)
+const GOOD_YAW := 90.0 ## Rear (power sockets) towards the room: the 3 m cords reach the strip.
+const WALL_SPOT := Vector3(1.2, 0.0, 0.5)
 const FAR_SPOT := Vector3(1.45, 0.0, 0.65)
 const BLOCK_SPOT := Vector3(-0.35, 0.0, 0.0)
-const ASIDE := Vector3(-0.9, 0.0, 1.0) ## Where the character waits while the rack is placed.
-const SHOPPING: Array[StringName] = [&"rack_12u_open", &"switch_16p_1u", &"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_3m"]
+const ASIDE := Vector3(-1.35, 0.0, 0.85) ## Where the character waits while the rack is placed (by the door, outside the delivery zone).
+## The uplink to the router follows the floor: about 3.1 m from the good spot, so the 5 m cable.
+const SHOPPING: Array[StringName] = [&"rack_12u_open", &"switch_16p_1u", &"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_5m"]
+
+signal session_attached
+
+const SAVE_SLOT := "user://saves/walkthrough.json" ## Never the player's save file.
+
+static var _instance: WalkthroughDriver = null
 
 var s: GameSession
 var out_dir: String
@@ -43,14 +50,28 @@ static func _arg(prefix: String) -> String:
 	return ""
 
 
-func start(session: GameSession, dir: String) -> void:
-	s = session
-	out_dir = dir
+## Called by every GameSession that starts with --walkthrough. The driver lives under the tree
+## root, so it survives loading a game (which rebuilds the scene) and follows the new session.
+static func attach(session: GameSession) -> void:
+	if _instance != null:
+		_instance.s = session
+		_instance.session_attached.emit()
+		return
+	_instance = WalkthroughDriver.new()
+	_instance.name = "WalkthroughDriver"
+	_instance.process_mode = Node.PROCESS_MODE_ALWAYS # keeps working while a menu pauses the game
+	_instance.s = session
+	_instance.out_dir = requested_dir()
 	var requested := _arg("--scenario=")
 	if requested != "":
-		scenario = requested
-	DirAccess.make_dir_recursive_absolute(dir)
-	_run.call_deferred()
+		_instance.scenario = requested
+	SaveService.slot_path = SAVE_SLOT
+	for path: String in [SAVE_SLOT, SAVE_SLOT + ".bak"]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+	DirAccess.make_dir_recursive_absolute(_instance.out_dir)
+	session.get_tree().root.add_child.call_deferred(_instance)
+	_instance._run.call_deferred()
 
 
 func _run() -> void:
@@ -199,14 +220,25 @@ func _shop() -> bool:
 
 
 func _unpack() -> bool:
-	_note("2. Abrir los paquetes")
-	while not s.world.packages.is_empty():
-		var package_id: int = s.world.packages.keys()[0]
-		await _click_point((s.package_views[package_id] as Node3D).global_position + Vector3(0.0, 0.25, 0.0))
-		if not await _wait(func() -> bool: return not s.world.packages.has(package_id)):
-			_fail("no se abrió el paquete %d (modo %d)" % [package_id, s.interaction.mode])
+	_note("2. Abrir las cajas de la pila de entregas (el contador baja con cada una)")
+	var expected := s.world.packages.size()
+	while expected > 0:
+		var shown := s.package_stack.label.text
+		if shown != "×%d" % expected or not s.package_stack.visible:
+			_fail("el contador de la pila muestra «%s» y hay %d cajas" % [shown, expected])
+		var stack_rect := Rect2(s.world.delivery_zone.position, s.world.delivery_zone.size)
+		var p := s.package_stack.global_position
+		if not stack_rect.has_point(Vector2(p.x, p.z)):
+			_fail("la pila no está en la zona de entregas: %s" % _v(p))
+		await _click_point(s.target_center(&"package", -1))
+		if not await _wait(func() -> bool: return s.world.packages.size() < expected):
+			_fail("no se abrió ninguna caja (modo %d, mensaje «%s»)" % [s.interaction.mode, s.hud._toast.text])
 			return false
+		expected -= 1
+		await _frames(3)
 	await _frames(10)
+	if s.package_stack.visible:
+		_fail("la pila sigue visible sin cajas")
 	await _shot("inventario")
 	return true
 
@@ -239,7 +271,7 @@ func _place_rack() -> SimDevice:
 			if not s.hud._toast.text.contains("libres delante y detrás"):
 				_fail("el rechazo no explica el motivo: «%s»" % s.hud._toast.text)
 			_note("  girado 90°: el frente mira a la habitación")
-			await _place_at(rack, WALL_SPOT, 180.0, "colocando_rack")
+			await _place_at(rack, WALL_SPOT, 0.0, "colocando_rack")
 		"far":
 			var preview := await _place_at(rack, FAR_SPOT, 0.0, "aviso_lejos")
 			if not preview.contains("Lejos de la regleta"):
@@ -388,7 +420,7 @@ func _network(rack: SimDevice) -> bool:
 	await _shot("servidor_switch")
 
 	_note("8. Cable de red switch -> router")
-	if not await _choose_cable(&"cable_cat6_3m"):
+	if not await _choose_cable(&"cable_cat6_5m"):
 		return false
 	await _click_port(PortRef.make(sw.id, &"lan", 1))
 	await _leave()
@@ -402,7 +434,47 @@ func _network(rack: SimDevice) -> bool:
 	if not link["up"]:
 		_fail("sin enlace switch-router: %s" % link["reason"])
 		return false
+	await _check_cables_clear("tras cablear")
 	return true
+
+
+## Every drawn cable: visible (has a path) and no point of it inside a solid that is not one of
+## its own two devices (or the rack they are in): furniture parts, walls, other devices, boxes.
+func _check_cables_clear(label: String) -> void:
+	await _frames(3)
+	var space := s.get_world_3d().direct_space_state
+	var checked := 0
+	for cable_id: int in s.world.cable_ends:
+		var ends: Dictionary = s.world.cable_ends[cable_id]
+		if ends["b"] == "":
+			continue
+		if not s.cables.paths.has(cable_id):
+			_fail("%s: el cable %d no se dibuja" % [label, cable_id])
+			continue
+		var exclude: Array[RID] = []
+		for ref: String in [ends["a"], ends["b"]]:
+			var d := s.world.get_device(PortRef.device_id(ref))
+			for id: int in [d.id, d.rack_id]:
+				var view := s.device_views.get(id) as DeviceView
+				if view != null:
+					exclude.append(view.body.get_rid())
+		var path: PackedVector3Array = s.cables.paths[cable_id]
+		var query := PhysicsPointQueryParameters3D.new()
+		query.collision_mask = Layers.FURNITURE | Layers.WALLS | Layers.DEVICES
+		query.exclude = exclude
+		for i: int in range(1, path.size()):
+			var steps := maxi(1, ceili(path[i - 1].distance_to(path[i]) / 0.02))
+			for k: int in steps + 1:
+				var p := path[i - 1].lerp(path[i], float(k) / steps)
+				query.position = p
+				var hits := space.intersect_point(query, 1)
+				checked += 1
+				if not hits.is_empty():
+					var what := hits[0]["collider"] as Node
+					_fail("%s: el cable %s atraviesa %s en %s" % [label, s.world.get_device(cable_id).definition.model,
+						what.get_parent().name if what != null else "?", _v(p)])
+					return
+	_note("  cables comprobados (%s): %d puntos, ninguno dentro de un sólido" % [label, checked])
 
 
 func _server_ip(rack: SimDevice) -> bool:

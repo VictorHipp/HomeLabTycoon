@@ -58,6 +58,27 @@ static func add_box_body(parent: Node3D, box: AABB, layer: int) -> StaticBody3D:
 	return body
 
 
+## Adds one StaticBody3D with a box per visible mesh of `model` (its parts: desktop, legs,
+## drawers...), so the solid shape follows the object instead of one big box around it.
+static func add_part_bodies(model: Node3D, layer: int) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.collision_layer = layer
+	body.collision_mask = 0
+	for entry: Array in _walk(model, model.transform.affine_inverse()):
+		var mesh := entry[0] as MeshInstance3D
+		if mesh == null or not mesh.visible:
+			continue
+		var box: AABB = (entry[1] as Transform3D) * mesh.get_aabb()
+		var shape := CollisionShape3D.new()
+		var box_shape := BoxShape3D.new()
+		box_shape.size = box.size.max(Vector3(0.01, 0.01, 0.01))
+		shape.shape = box_shape
+		shape.position = box.get_center()
+		body.add_child(shape)
+	model.add_child(body)
+	return body
+
+
 static func _walk(node: Node, parent_xf: Transform3D) -> Array:
 	var xf := parent_xf
 	if node is Node3D:

@@ -16,7 +16,7 @@ var _speed_buttons: Dictionary = {}
 var _mission_title: Label
 var _mission_list: VBoxContainer
 var _inventory_row: HBoxContainer
-var _inventory_signature: String = ""
+var _inventory_signature: String = "-" ## Never matches a real list: the first refresh always draws.
 var _toast: Label
 var _toast_time: float = 0.0
 var _hint: Label
