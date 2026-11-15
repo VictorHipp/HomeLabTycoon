@@ -492,41 +492,80 @@ def build_package_box():
     empty("STAND_POINT", (0, -d / 2 - 0.55, 0))
 
 
+def parent_keep(child, parent):
+    """Parent without moving the child in world space."""
+    bpy.context.view_layer.update()
+    child.parent = parent
+    child.matrix_parent_inverse = parent.matrix_world.inverted()
+
+
 def build_room_bedroom():
     """3.5 x 3.0 m bedroom shell. Floor top at z=0. Back wall at +Y, left wall at -X.
-    Front (-Y) and right (+X) walls are the 'cutaway' low versions (camera side)."""
-    W, D, H, T = 3.5, 3.0, 2.6, 0.10
+    Every wall exists twice (docs/CAMERA_SYSTEM.md §3.3, decision 15):
+      WALL_<side>      full height; window / door parts are its children,
+      WALL_<side>_cut  empty grouping the low (0.30 m) version.
+    The game shows one or the other depending on where the camera is."""
+    W, D, H, T, LOW = 3.5, 3.0, 2.6, 0.10, 0.30
     planks = 14
     pw = W / planks
     for i in range(planks):
         box(f"floor_plank_{i}", (pw, D, 0.04), (-W / 2 + pw * (i + 0.5), 0, -0.02),
             "madera" if i % 2 == 0 else "madera_oscura", chamfer=0.06)
+    door_y, door_w = -1.02, 0.80          # near the camera-side corner, clear of the bed
+    children = {"back": [], "left": []}
+
+    # Back wall with the window.
     back = box("WALL_back", (W + 2 * T, T, H), (0, D / 2 + T / 2, H / 2), "hueso")
     cut(back, [((1.10, 0.3, 1.10), (0.55, D / 2 + T / 2, 1.45))], "niebla")
-    box("window_frame_top", (1.16, 0.14, 0.05), (0.55, D / 2 + T / 2, 2.025), "niebla", chamfer=0.2)
-    box("window_frame_bottom", (1.24, 0.20, 0.05), (0.55, D / 2 + T / 2 - 0.03, 0.875), "niebla", chamfer=0.2)
+    children["back"] += [
+        box("window_frame_top", (1.16, 0.14, 0.05), (0.55, D / 2 + T / 2, 2.025), "niebla", chamfer=0.2),
+        box("window_frame_bottom", (1.24, 0.20, 0.05), (0.55, D / 2 + T / 2 - 0.03, 0.875), "niebla", chamfer=0.2),
+        box("window_mullion", (0.035, 0.10, 1.10), (0.55, D / 2 + T / 2, 1.45), "niebla"),
+        box("window_glass", (1.10, 0.01, 1.10), (0.55, D / 2 + T / 2, 1.45), "cristal"),
+        box("window_sky", (1.6, 0.02, 1.6), (0.55, D / 2 + T + 0.25, 1.45), "cielo"),
+    ]
     for sx in (-1, 1):
-        box(f"window_frame_side_{sx}", (0.05, 0.14, 1.10), (0.55 + sx * 0.575, D / 2 + T / 2, 1.45), "niebla", chamfer=0.2)
-    box("window_mullion", (0.035, 0.10, 1.10), (0.55, D / 2 + T / 2, 1.45), "niebla")
-    box("window_glass", (1.10, 0.01, 1.10), (0.55, D / 2 + T / 2, 1.45), "cristal")
-    box("window_sky", (1.6, 0.02, 1.6), (0.55, D / 2 + T + 0.25, 1.45), "cielo")
-    door_y, door_w = -1.02, 0.80          # near the camera-side corner, clear of the bed
+        children["back"].append(box(f"window_frame_side_{sx}", (0.05, 0.14, 1.10),
+                                    (0.55 + sx * 0.575, D / 2 + T / 2, 1.45), "niebla", chamfer=0.2))
+    # Left wall with the door.
     left = box("WALL_left", (T, D, H), (-W / 2 - T / 2, 0, H / 2), "hueso")
     cut(left, [((0.3, door_w, 2.08), (-W / 2 - T / 2, door_y, 1.04))], "madera")
     for sy in (-1, 1):
-        box(f"door_frame_{sy}", (0.14, 0.05, 2.12), (-W / 2 - T / 2, door_y + sy * (door_w / 2 + 0.025), 1.06),
-            "madera", chamfer=0.2)
-    box("door_frame_top", (0.14, door_w + 0.10, 0.05), (-W / 2 - T / 2, door_y, 2.105), "madera", chamfer=0.2)
-    box("door", (0.04, door_w - 0.02, 2.06), (-W / 2 - T / 2 + 0.03, door_y, 1.03), "madera_oscura", chamfer=0.15)
-    cylinder("door_handle", 0.012, 0.08, (-W / 2 + 0.03, door_y + 0.30, 1.0), "acero", rot=(0, math.pi / 2, 0))
-    # skirting boards
+        children["left"].append(box(f"door_frame_{sy}", (0.14, 0.05, 2.12),
+                                    (-W / 2 - T / 2, door_y + sy * (door_w / 2 + 0.025), 1.06), "madera", chamfer=0.2))
+    children["left"] += [
+        box("door_frame_top", (0.14, door_w + 0.10, 0.05), (-W / 2 - T / 2, door_y, 2.105), "madera", chamfer=0.2),
+        box("door", (0.04, door_w - 0.02, 2.06), (-W / 2 - T / 2 + 0.03, door_y, 1.03), "madera_oscura", chamfer=0.15),
+        cylinder("door_handle", 0.012, 0.08, (-W / 2 + 0.03, door_y + 0.30, 1.0), "acero", rot=(0, math.pi / 2, 0)),
+    ]
+    # Plain full-height front and right walls.
+    box("WALL_front", (W + 2 * T, T, H), (0, -D / 2 - T / 2, H / 2), "hueso")
+    box("WALL_right", (T, D, H), (W / 2 + T / 2, 0, H / 2), "hueso")
+    for side in ("back", "left"):
+        wall = bpy.data.objects[f"WALL_{side}"]
+        for child in children[side]:
+            parent_keep(child, wall)
+
+    # Low (cut) versions, each grouped under an empty WALL_<side>_cut.
+    def low_wall(side, segments):
+        group = empty(f"WALL_{side}_cut", (0, 0, 0), size=0.1)
+        for i, (size, loc) in enumerate(segments):
+            seg = box(f"wall_{side}_low_{i}", (size[0], size[1], LOW), (loc[0], loc[1], LOW / 2), "hueso", chamfer=0.1)
+            cap = box(f"wall_{side}_cap_{i}", (size[0] + 0.004, size[1] + 0.01, 0.02), (loc[0], loc[1], LOW + 0.01), "grafito")
+            parent_keep(seg, group)
+            parent_keep(cap, group)
+
+    low_wall("back", [((W + 2 * T, T), (0, D / 2 + T / 2))])
+    low_wall("front", [((W + 2 * T, T), (0, -D / 2 - T / 2))])
+    low_wall("right", [((T, D), (W / 2 + T / 2, 0))])
+    gap_lo, gap_hi = door_y - door_w / 2 - 0.05, door_y + door_w / 2 + 0.05
+    low_wall("left", [((T, gap_lo + D / 2), (-W / 2 - T / 2, (gap_lo - D / 2) / 2)),
+                      ((T, D / 2 - gap_hi), (-W / 2 - T / 2, (gap_hi + D / 2) / 2))])
+    # skirting boards (always visible)
     box("skirting_back", (W, 0.015, 0.08), (0, D / 2 - 0.0075, 0.04), "terracota")
     box("skirting_left", (0.015, D, 0.08), (-W / 2 + 0.0075, 0, 0.04), "terracota")
-    # cutaway walls (camera side)
-    box("WALL_front_cut", (W + 2 * T, T, 0.30), (0, -D / 2 - T / 2, 0.15), "hueso", chamfer=0.1)
-    box("WALL_right_cut", (T, D, 0.30), (W / 2 + T / 2, 0, 0.15), "hueso", chamfer=0.1)
-    box("wall_cap_front", (W + 2 * T, T + 0.01, 0.02), (0, -D / 2 - T / 2, 0.31), "grafito")
-    box("wall_cap_right", (T + 0.01, D, 0.02), (W / 2 + T / 2, 0, 0.31), "grafito")
+    box("skirting_front", (W, 0.015, 0.08), (0, -D / 2 + 0.0075, 0.04), "terracota")
+    box("skirting_right", (0.015, D, 0.08), (W / 2 - 0.0075, 0, 0.04), "terracota")
     empty("DELIVERY_POINT", (-W / 2 + 0.45, door_y, 0))
 
 

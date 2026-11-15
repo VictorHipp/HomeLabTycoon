@@ -8,7 +8,8 @@ const FIRST_MISSION := "res://data/missions/first_server.tres"
 const START_CREDITS := 1500
 const PC_POSITION := Vector3(-0.30, 0.0, -1.22)
 const ROUTER_POSITION := Vector3(1.45, 0.55, -1.30) ## On the small cabinet.
-const STRIP_POSITION := Vector3(0.15, 0.0, -1.38) ## Under the desk.
+const ROUTER_YAW := 180.0 ## Rear ports face the room (not the wall or the desk) so they can be reached.
+const STRIP_POSITION := Vector3(-0.30, 0.0, -0.85) ## On the floor in front of the PC tower.
 
 
 static func create(catalog: Catalog = null) -> SimWorld:
@@ -21,13 +22,15 @@ static func create(catalog: Catalog = null) -> SimWorld:
 		Rect2(1.18, -1.48, 0.54, 0.40), # cabinet
 		Rect2(0.11, -0.92, 0.58, 0.60), # chair
 	])
-	world.delivery_point = Vector3(-1.30, 0.0, 1.02)
+	# Boxes are left in a row along the front wall, next to the door, without blocking the way.
+	world.delivery_point = Vector3(-0.70, 0.0, 1.10)
 
 	var pc := world.create_device(&"pc_old", &"fixed")
 	pc.position = PC_POSITION
 	pc.power_switch_on = true
 	var router := world.create_device(&"router_home", &"fixed")
 	router.position = ROUTER_POSITION
+	router.yaw_degrees = ROUTER_YAW
 	var strip := world.create_device(&"power_strip_4", &"fixed")
 	strip.position = STRIP_POSITION
 

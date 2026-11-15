@@ -191,14 +191,21 @@ func purchase(item_ids: Array[StringName]) -> CommandResult:
 	if buyer == null or not NetworkEngine.has_internet(self, buyer):
 		return CommandResult.failure(tr("La tienda no responde: el ordenador no tiene conexión a Internet."))
 	credits -= total
+	# One box per piece of hardware (with its accessories); loose cables share one box.
 	var groups: Array = []
+	var cables_box: Array[int] = []
 	for item_id: StringName in item_ids:
 		var group: Array[int] = []
 		var main := create_device(item_id, &"in_transit")
 		group.append(main.id)
 		for extra: StringName in main.definition.box_contents:
 			group.append(create_device(extra, &"in_transit").id)
-		groups.append(group)
+		if main.definition.category == &"cable":
+			cables_box.append_array(group)
+		else:
+			groups.append(group)
+	if not cables_box.is_empty():
+		groups.append(cables_box)
 	var order := {"id": _next_id, "eta": time_minutes + DELIVERY_MINUTES, "groups": groups,
 		"total": total, "delivered": false}
 	_next_id += 1
@@ -262,28 +269,37 @@ static func footprint_rect(def: HardwareDefinition, pos: Vector3, yaw_degrees: f
 	return Rect2(pos.x - size.x / 2.0, pos.z - size.y / 2.0, size.x, size.y)
 
 
-func place_device(device_id: int, pos: Vector3, yaw_degrees: float) -> CommandResult:
+## Read-only placement check: "" if the device fits there, otherwise the reason (for previews).
+func placement_problem(device_id: int, pos: Vector3, yaw_degrees: float) -> String:
 	var d := get_device(device_id)
 	if d == null or not (d.location in [&"inventory", &"placed"]):
-		return CommandResult.failure(tr("Ese objeto no está en tu inventario."))
+		return tr("Ese objeto no está en tu inventario.")
 	if d.definition.placement != &"floor":
-		return CommandResult.failure(tr("%s no se coloca en el suelo.") % d.display_name())
+		return tr("%s no se coloca en el suelo.") % d.display_name()
 	if d.location == &"placed" and _has_cables_inside(d):
-		return CommandResult.failure(tr("Desconecta antes los cables de %s.") % d.display_name())
+		return tr("Desconecta antes los cables de %s.") % d.display_name()
 	var rect := footprint_rect(d.definition, pos, yaw_degrees)
 	if not room_bounds.encloses(rect):
-		return CommandResult.failure(tr("No cabe ahí: se sale de la habitación."))
+		return tr("No cabe ahí: se sale de la habitación.")
 	for obstacle: Rect2 in obstacles:
 		if rect.intersects(obstacle):
-			return CommandResult.failure(tr("No cabe ahí: choca con un mueble."))
+			return tr("No cabe ahí: choca con un mueble.")
 	for other: SimDevice in devices.values():
 		if other != d and other.location in [&"placed", &"fixed"] and other.definition.placement == &"floor":
 			if rect.intersects(footprint_rect(other.definition, other.position, other.yaw_degrees)):
-				return CommandResult.failure(tr("No cabe ahí: choca con %s.") % other.display_name())
+				return tr("No cabe ahí: choca con %s.") % other.display_name()
 	for package: Dictionary in packages.values():
 		var p: Vector3 = package["position"]
 		if rect.intersects(Rect2(p.x - PACKAGE_FOOTPRINT.x / 2, p.z - PACKAGE_FOOTPRINT.y / 2, PACKAGE_FOOTPRINT.x, PACKAGE_FOOTPRINT.y)):
-			return CommandResult.failure(tr("No cabe ahí: hay un paquete en medio."))
+			return tr("No cabe ahí: hay un paquete en medio.")
+	return ""
+
+
+func place_device(device_id: int, pos: Vector3, yaw_degrees: float) -> CommandResult:
+	var problem := placement_problem(device_id, pos, yaw_degrees)
+	if problem != "":
+		return CommandResult.failure(problem)
+	var d := get_device(device_id)
 	d.location = &"placed"
 	d.position = Vector3(pos.x, 0.0, pos.z)
 	d.yaw_degrees = fposmod(round(yaw_degrees / 90.0) * 90.0, 360.0)

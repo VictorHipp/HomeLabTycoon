@@ -77,13 +77,11 @@ func _check_main_scene() -> void:
 	if packed == null:
 		_failures.append("main.tscn did not load")
 		return
+	# Not added to the tree here: the full session (navigation bake, UI) is exercised by the
+	# "run main" step of tools/check_project.ps1 and by the automated walkthrough.
 	var main := packed.instantiate()
-	root.add_child(main)
-	var sun := main.get_node_or_null("Sun") as DirectionalLight3D
-	_expect(sun != null, "Sun node exists")
-	if sun != null:
-		_expect(is_equal_approx(sun.rotation_degrees.x, -50.0), "Sun rotation_degrees was applied from the scene")
-	_expect(main.get_node_or_null("Camera3D") != null, "Camera3D node exists")
+	_expect(main is GameSession, "main scene root is the GameSession")
+	main.free()
 
 
 func _expect(condition: bool, description: String) -> void:

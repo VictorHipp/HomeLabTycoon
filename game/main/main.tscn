@@ -1,36 +1,6 @@
 [gd_scene format=3]
 
-[ext_resource type="Script" path="res://game/main/main.gd" id="1_main"]
-
-[sub_resource type="BoxMesh" id="BoxMesh_floor"]
-size = Vector3(8, 0.1, 6)
-
-[sub_resource type="BoxMesh" id="BoxMesh_rack"]
-size = Vector3(0.6, 2, 1)
-
-[sub_resource type="Environment" id="Environment_main"]
-background_mode = 1
-background_color = Color(0.08, 0.09, 0.11, 1)
-ambient_light_source = 2
-ambient_light_color = Color(0.6, 0.65, 0.7, 1)
-ambient_light_energy = 0.6
+[ext_resource type="Script" path="res://game/session/game_session.gd" id="1_session"]
 
 [node name="Main" type="Node3D"]
-script = ExtResource("1_main")
-
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Environment_main")
-
-[node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-50, 30, 0)
-shadow_enabled = true
-
-[node name="Floor" type="MeshInstance3D" parent="."]
-mesh = SubResource("BoxMesh_floor")
-
-[node name="PlaceholderRack" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.05, 0)
-mesh = SubResource("BoxMesh_rack")
-
-[node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.5, 6)
+script = ExtResource("1_session")

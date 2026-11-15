@@ -17,7 +17,14 @@ func _buy_and_unpack(items: Array[StringName]) -> void:
 	var r := world.purchase(items)
 	assert_true(r.ok, "purchase: " + r.message)
 	assert_true(world.skip_to_next_event().ok, "skip to delivery")
-	assert_eq(world.packages.size(), items.size(), "one box per product")
+	var boxes := 0
+	var has_cables := false
+	for item_id: StringName in items:
+		if world.catalog.get_item(item_id).category == &"cable":
+			has_cables = true
+		else:
+			boxes += 1
+	assert_eq(world.packages.size(), boxes + (1 if has_cables else 0), "one box per device, cables together")
 	for package_id: int in world.packages.keys():
 		assert_true(world.open_package(package_id).ok, "open package")
 
