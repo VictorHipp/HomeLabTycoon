@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="HardwareDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/port_definition.gd" id="1_untud"]
+[ext_resource type="Script" path="res://sim/hardware/hardware_definition.gd" id="2_eyul5"]
+[ext_resource type="Script" path="res://sim/hardware/specs/cable_spec.gd" id="3_xiaxw"]
+
+[sub_resource type="Resource" id="Resource_qh0jh"]
+script = ExtResource("3_xiaxw")
+media = &"power"
+length_m = 3.0
+max_speed_mbps = 0
+
+[resource]
+script = ExtResource("2_eyul5")
+id = &"power_cord_3m"
+category = &"cable"
+brand = "Voltara"
+model = "Cable de alimentación 3 m"
+description = "Cable de alimentación IEC (C13 a C14) de 3 m."
+price = 5
+specs = Array[Resource]([SubResource("Resource_qh0jh")])

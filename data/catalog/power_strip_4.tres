@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="HardwareDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/port_definition.gd" id="1_olsjw"]
+[ext_resource type="Script" path="res://sim/hardware/hardware_definition.gd" id="2_xhfjc"]
+[ext_resource type="Script" path="res://sim/hardware/specs/power_strip_spec.gd" id="3_q4omw"]
+
+[sub_resource type="Resource" id="Resource_yiuig"]
+script = ExtResource("1_olsjw")
+id = &"outlet"
+kind = 7
+count = 4
+speed_mbps = 0
+
+[sub_resource type="Resource" id="Resource_x7scg"]
+script = ExtResource("3_q4omw")
+
+[resource]
+script = ExtResource("2_xhfjc")
+id = &"power_strip_4"
+category = &"power"
+brand = "Voltara"
+model = "Regleta 4"
+description = "Regleta de 4 tomas con interruptor."
+purchasable = false
+placement = &"floor"
+footprint_m = Vector2(0.3, 0.055)
+ports = Array[ExtResource("1_olsjw")]([SubResource("Resource_yiuig")])
+specs = Array[Resource]([SubResource("Resource_x7scg")])
+model_path = "res://assets/models/power/power_strip_4.glb"

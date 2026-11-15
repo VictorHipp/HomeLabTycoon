@@ -1,0 +1,105 @@
+[gd_scene format=3 uid="uid://dd8uqlf31v7aq"]
+
+[ext_resource type="Script" uid="uid://dqtugk563qpn7" path="res://game/showcase/model_showcase.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://chlbj6cson11q" path="res://assets/models/rooms/room_bedroom.glb" id="2_room"]
+[ext_resource type="PackedScene" uid="uid://cy6bqtrn2fywk" path="res://assets/models/furniture/bed_single.glb" id="3_bed"]
+[ext_resource type="PackedScene" uid="uid://d17gppvym62mb" path="res://assets/models/furniture/desk_basic.glb" id="4_desk"]
+[ext_resource type="PackedScene" uid="uid://dy1qwlej0euat" path="res://assets/models/furniture/chair_office.glb" id="5_chair"]
+[ext_resource type="PackedScene" uid="uid://cpjmnqg6bxnoh" path="res://assets/models/furniture/cabinet_small.glb" id="6_cabinet"]
+[ext_resource type="PackedScene" uid="uid://b5ank0vlu3heg" path="res://assets/models/furniture/rug_basic.glb" id="7_rug"]
+[ext_resource type="PackedScene" uid="uid://il45lu1t8m81" path="res://assets/models/compute/pc_tower_old.glb" id="8_pc"]
+[ext_resource type="PackedScene" uid="uid://8g1wrwbnyask" path="res://assets/models/compute/monitor_old.glb" id="9_monitor"]
+[ext_resource type="PackedScene" uid="uid://cg1qywjseumwd" path="res://assets/models/compute/keyboard_mouse.glb" id="10_keyboard"]
+[ext_resource type="PackedScene" uid="uid://b3dafvnt7r6dk" path="res://assets/models/network/router_home.glb" id="11_router"]
+[ext_resource type="PackedScene" uid="uid://bv2ipfio386md" path="res://assets/models/power/power_strip_4.glb" id="12_strip"]
+[ext_resource type="PackedScene" uid="uid://mp3jrr1ai41y" path="res://assets/models/racks/rack_12u_open.glb" id="13_rack"]
+[ext_resource type="PackedScene" uid="uid://u0twdbhbrs3h" path="res://assets/models/network/switch_16p_1u.glb" id="14_switch"]
+[ext_resource type="PackedScene" uid="uid://dttussthkkrnj" path="res://assets/models/compute/server_1u_entry.glb" id="15_server"]
+[ext_resource type="PackedScene" uid="uid://c4u3w8vo26sds" path="res://assets/models/props/package_box.glb" id="16_box"]
+[ext_resource type="PackedScene" uid="uid://dk8uqgmb36qk5" path="res://assets/models/characters/mannequin_scale.glb" id="17_mannequin"]
+
+[sub_resource type="Environment" id="Environment_showcase"]
+background_mode = 1
+background_color = Color(0.118, 0.141, 0.188, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.86, 0.88, 0.92, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 2
+ssao_enabled = true
+ssao_radius = 0.8
+ssao_intensity = 1.6
+glow_enabled = true
+glow_intensity = 0.7
+glow_bloom = 0.05
+glow_hdr_threshold = 1.2
+
+[node name="ModelShowcase" type="Node3D" unique_id=250905205]
+script = ExtResource("1_script")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=501307155]
+environment = SubResource("Environment_showcase")
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=1164431441]
+transform = Transform3D(-0.9396926, -0.21056868, 0.2695156, 0, 0.7880108, 0.6156615, -0.3420202, 0.5785326, -0.74048793, 0, 0, 0)
+light_color = Color(1, 0.91, 0.78, 1)
+light_energy = 2.2
+shadow_enabled = true
+shadow_blur = 1.5
+directional_shadow_max_distance = 12.0
+
+[node name="Lamp" type="OmniLight3D" parent="." unique_id=1291683191]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.2, 2.3, -0.2)
+light_color = Color(1, 0.85, 0.66, 1)
+light_energy = 1.1
+shadow_enabled = true
+omni_range = 5.5
+
+[node name="Room" parent="." unique_id=504252358 instance=ExtResource("2_room")]
+
+[node name="Bed" parent="." unique_id=1423381540 instance=ExtResource("3_bed")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.24, 0, -0.465)
+
+[node name="Desk" parent="." unique_id=1220251071 instance=ExtResource("4_desk")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.55, 0, -1.17)
+
+[node name="Chair" parent="." unique_id=2092150618 instance=ExtResource("5_chair")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0.4, 0, -0.62)
+
+[node name="Cabinet" parent="." unique_id=1809464752 instance=ExtResource("6_cabinet")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.45, 0, -1.28)
+
+[node name="Rug" parent="." unique_id=426589405 instance=ExtResource("7_rug")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.25, 0, 0.35)
+
+[node name="PcTower" parent="." unique_id=235298641 instance=ExtResource("8_pc")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3, 0, -1.22)
+
+[node name="Monitor" parent="." unique_id=704035133 instance=ExtResource("9_monitor")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4, 0.75, -1.3)
+
+[node name="Keyboard" parent="." unique_id=531962786 instance=ExtResource("10_keyboard")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.4, 0.75, -1.02)
+
+[node name="Router" parent="." unique_id=1728722572 instance=ExtResource("11_router")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.45, 0.55, -1.3)
+
+[node name="PowerStrip" parent="." unique_id=1276111096 instance=ExtResource("12_strip")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.15, 0, -1.38)
+
+[node name="Rack" parent="." unique_id=2082342422 instance=ExtResource("13_rack")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, 0, -0.3)
+
+[node name="SwitchU9" parent="." unique_id=1458178914 instance=ExtResource("14_switch")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2015264, 0.4306, 0.003)
+
+[node name="ServerU5" parent="." unique_id=3529218 instance=ExtResource("15_server")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, 0.2528, 0.003)
+
+[node name="Package" parent="." unique_id=1141071220 instance=ExtResource("16_box")]
+transform = Transform3D(0.966, 0, 0.259, 0, 1, 0, -0.259, 0, 0.966, -1.22, 0, 1)
+
+[node name="Mannequin" parent="." unique_id=1597607716 instance=ExtResource("17_mannequin")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.35, 0, 0.35)
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=552779255]
+current = true

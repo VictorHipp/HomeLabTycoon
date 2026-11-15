@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="HardwareDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/port_definition.gd" id="1_4us75"]
+[ext_resource type="Script" path="res://sim/hardware/hardware_definition.gd" id="2_4sb2x"]
+[ext_resource type="Script" path="res://sim/hardware/specs/rack_spec.gd" id="3_n53fq"]
+
+[sub_resource type="Resource" id="Resource_bx8ma"]
+script = ExtResource("3_n53fq")
+
+[resource]
+script = ExtResource("2_4sb2x")
+id = &"rack_12u_open"
+category = &"rack"
+brand = "Rackwell"
+model = "RW-12"
+description = "Rack abierto de suelo de 19\" con 12 unidades (12U)."
+price = 220
+placement = &"floor"
+footprint_m = Vector2(0.531, 0.601)
+specs = Array[Resource]([SubResource("Resource_bx8ma")])
+model_path = "res://assets/models/racks/rack_12u_open.glb"

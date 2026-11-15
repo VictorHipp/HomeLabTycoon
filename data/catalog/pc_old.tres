@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="HardwareDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/port_definition.gd" id="1_dl2gc"]
+[ext_resource type="Script" path="res://sim/hardware/hardware_definition.gd" id="2_3e6bb"]
+[ext_resource type="Script" path="res://sim/hardware/specs/host_spec.gd" id="3_22ihd"]
+
+[sub_resource type="Resource" id="Resource_pocyb"]
+script = ExtResource("1_dl2gc")
+id = &"lan"
+
+[sub_resource type="Resource" id="Resource_cs1mw"]
+script = ExtResource("1_dl2gc")
+id = &"psu"
+kind = 6
+speed_mbps = 0
+
+[sub_resource type="Resource" id="Resource_jfk1f"]
+script = ExtResource("3_22ihd")
+hostname = "pc-casa"
+eth0_mode = &"dhcp"
+
+[resource]
+script = ExtResource("2_3e6bb")
+id = &"pc_old"
+category = &"computer"
+brand = "Nodex"
+model = "Casa 2009"
+description = "Ordenador de sobremesa antiguo. Lento, pero funciona."
+purchasable = false
+placement = &"floor"
+footprint_m = Vector2(0.18, 0.42)
+power_idle_watts = 45.0
+power_max_watts = 120.0
+has_power_button = true
+boot_minutes = 1.0
+ports = Array[ExtResource("1_dl2gc")]([SubResource("Resource_pocyb"), SubResource("Resource_cs1mw")])
+specs = Array[Resource]([SubResource("Resource_jfk1f")])
+model_path = "res://assets/models/compute/pc_tower_old.glb"

@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="HardwareDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/port_definition.gd" id="1_7in2j"]
+[ext_resource type="Script" path="res://sim/hardware/hardware_definition.gd" id="2_n18og"]
+[ext_resource type="Script" path="res://sim/hardware/specs/host_spec.gd" id="3_2do4r"]
+
+[sub_resource type="Resource" id="Resource_43xdm"]
+script = ExtResource("1_7in2j")
+id = &"lan"
+count = 2
+
+[sub_resource type="Resource" id="Resource_72a7n"]
+script = ExtResource("1_7in2j")
+id = &"psu"
+kind = 6
+speed_mbps = 0
+
+[sub_resource type="Resource" id="Resource_mwlks"]
+script = ExtResource("3_2do4r")
+hostname = "srv-01"
+login_user = "root"
+
+[resource]
+script = ExtResource("2_n18og")
+id = &"server_1u_entry"
+category = &"server"
+brand = "Nodex"
+model = "NX-1"
+description = "Servidor de entrada para rack (1U) con 2 puertos Gigabit."
+price = 480
+placement = &"rack"
+footprint_m = Vector2(0.4826, 0.5)
+mount_height_u = 1
+power_idle_watts = 90.0
+power_max_watts = 250.0
+has_power_button = true
+boot_minutes = 1.5
+ports = Array[ExtResource("1_7in2j")]([SubResource("Resource_43xdm"), SubResource("Resource_72a7n")])
+specs = Array[Resource]([SubResource("Resource_mwlks")])
+box_contents = Array[StringName]([&"power_cord_3m"])
+model_path = "res://assets/models/compute/server_1u_entry.glb"

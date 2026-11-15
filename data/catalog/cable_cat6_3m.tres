@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="HardwareDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/port_definition.gd" id="1_otk01"]
+[ext_resource type="Script" path="res://sim/hardware/hardware_definition.gd" id="2_u0fcj"]
+[ext_resource type="Script" path="res://sim/hardware/specs/cable_spec.gd" id="3_qrt2r"]
+
+[sub_resource type="Resource" id="Resource_7ojns"]
+script = ExtResource("3_qrt2r")
+length_m = 3.0
+
+[resource]
+script = ExtResource("2_u0fcj")
+id = &"cable_cat6_3m"
+category = &"cable"
+brand = "Cablecraft"
+model = "Cat6 3 m"
+description = "Latiguillo de red Cat6 (RJ45 a RJ45) de 3 m."
+price = 9
+specs = Array[Resource]([SubResource("Resource_7ojns")])

@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="HardwareDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/port_definition.gd" id="1_xyysv"]
+[ext_resource type="Script" path="res://sim/hardware/hardware_definition.gd" id="2_7ol8b"]
+[ext_resource type="Script" path="res://sim/hardware/specs/switch_spec.gd" id="3_u2i4i"]
+
+[sub_resource type="Resource" id="Resource_r4k0w"]
+script = ExtResource("1_xyysv")
+id = &"lan"
+count = 16
+
+[sub_resource type="Resource" id="Resource_hk8p3"]
+script = ExtResource("1_xyysv")
+id = &"psu"
+kind = 6
+speed_mbps = 0
+
+[sub_resource type="Resource" id="Resource_tscsl"]
+script = ExtResource("3_u2i4i")
+
+[resource]
+script = ExtResource("2_7ol8b")
+id = &"switch_16p_1u"
+category = &"switch"
+brand = "Linkara"
+model = "LS-16G"
+description = "Switch de 16 puertos Gigabit, no gestionable, para rack (1U)."
+price = 90
+placement = &"rack"
+footprint_m = Vector2(0.4826, 0.22)
+mount_height_u = 1
+power_idle_watts = 8.0
+power_max_watts = 15.0
+boot_minutes = 0.2
+ports = Array[ExtResource("1_xyysv")]([SubResource("Resource_r4k0w"), SubResource("Resource_hk8p3")])
+specs = Array[Resource]([SubResource("Resource_tscsl")])
+box_contents = Array[StringName]([&"power_cord_3m"])
+model_path = "res://assets/models/network/switch_16p_1u.glb"

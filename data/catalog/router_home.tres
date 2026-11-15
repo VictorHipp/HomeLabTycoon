@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="HardwareDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/port_definition.gd" id="1_rx0m0"]
+[ext_resource type="Script" path="res://sim/hardware/hardware_definition.gd" id="2_w6xxw"]
+[ext_resource type="Script" path="res://sim/hardware/specs/router_spec.gd" id="3_iwctc"]
+[ext_resource type="Script" path="res://sim/hardware/specs/switch_spec.gd" id="4_kd22p"]
+
+[sub_resource type="Resource" id="Resource_xr8ms"]
+script = ExtResource("1_rx0m0")
+id = &"lan"
+count = 4
+
+[sub_resource type="Resource" id="Resource_ntnhd"]
+script = ExtResource("1_rx0m0")
+id = &"wan"
+
+[sub_resource type="Resource" id="Resource_pfupo"]
+script = ExtResource("1_rx0m0")
+id = &"psu"
+kind = 6
+speed_mbps = 0
+
+[sub_resource type="Resource" id="Resource_tr2gk"]
+script = ExtResource("3_iwctc")
+
+[sub_resource type="Resource" id="Resource_sjscf"]
+script = ExtResource("4_kd22p")
+
+[resource]
+script = ExtResource("2_w6xxw")
+id = &"router_home"
+category = &"router"
+brand = "Linkara"
+model = "Home R4"
+description = "Router doméstico del proveedor: 4 puertos LAN, 1 WAN y DHCP."
+purchasable = false
+placement = &"desk"
+footprint_m = Vector2(0.22, 0.15)
+power_idle_watts = 8.0
+power_max_watts = 12.0
+boot_minutes = 0.5
+ports = Array[ExtResource("1_rx0m0")]([SubResource("Resource_xr8ms"), SubResource("Resource_ntnhd"), SubResource("Resource_pfupo")])
+specs = Array[Resource]([SubResource("Resource_tr2gk"), SubResource("Resource_sjscf")])
+model_path = "res://assets/models/network/router_home.glb"

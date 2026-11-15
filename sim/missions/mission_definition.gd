@@ -1,0 +1,11 @@
+class_name MissionDefinition
+extends Resource
+## A mission or contract (docs/PROGRESSION.md §6). Data only; one `.tres` per mission.
+
+@export var id: StringName = &""
+@export var title: String = ""
+@export_multiline var context: String = ""
+@export var budget_note: String = ""
+@export var reward_credits: int = 0
+@export var reward_xp: int = 0
+@export var requirements: Array[MissionRequirement] = []
