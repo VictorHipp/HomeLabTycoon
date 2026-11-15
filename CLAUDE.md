@@ -36,15 +36,12 @@ Simulador 3D de construcción y administración de infraestructura informática.
 14. **Guardado versionado y ampliable.**
 15. **Método:** hitos pequeños con versión jugable, pruebas, documentación, Git y nada de herramientas innecesarias.
 16. **Juego extenso** (2026-11-15): muchas partes (etapas → capítulos → misiones, más metas de carrera), con puntos y recompensas. **Los créditos ganados se gastan en la tienda para comprar material nuevo** (`docs/PROGRESSION.md` §10).
-17. **Decisiones confirmadas el 2026-11-15** (`docs/ROADMAP.md` §5):
-    - 1: carpetas `sim/` · `game/` · `data/`;
-    - 4: *runner* de pruebas propio;
-    - 6: escenario inicial;
-    - 15: corte de paredes;
-    - 17: commit de línea base, aprobado pero pendiente de que el usuario configure su identidad de Git;
-    - 20: módulos serializables desde el Hito 1.
-
-    La 16 (identidad visual) está **a prueba** hasta que el usuario revise la muestra de modelos.
+17. **Decisiones de `docs/ROADMAP.md` §5 confirmadas el 2026-11-15:** todas las recomendaciones salvo la 5 (tipografías: no se descarga ninguna) y la 18 (subagente). La identidad visual (16) está aprobada.
+18. **Prueba jugable de la primera misión** (2026-11-15): misión completa con tienda, personaje que camina y giro de cámara con el ratón, **sin cuaderno ni guardado** por ahora.
+19. **Git/GitHub:** repositorio **público** https://github.com/VictorHipp/HomeLabTycoon (`origin`, rama `main`).
+    - Identidad solo de este repo: `VictorHipp` con el correo *noreply* de GitHub. No uses otra.
+    - Antes de cada push: comprueba que no se suben datos personales y respeta las licencias de terceros (el addon `godot_ai` es MIT y lleva su `LICENSE`).
+    - Commit y push al cerrar cada etapa estable, con `check_project.ps1` en verde.
 
 ## Propuestas: cómo se aprueban
 
@@ -163,7 +160,7 @@ powershell -ExecutionPolicy Bypass -File tools\capture_showcase.ps1
 
 - Commits pequeños, en inglés, con prefijo convencional (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `test:`).
 - Nunca se versionan `.godot/` ni `.mcp.json`. Los `.uid` e `.import` sí.
-- **No hagas `commit`, `push` ni cambies la configuración de Git sin que el usuario lo pida.**
+- **Commits y push:** el usuario pidió (2026-11-15) guardar en local y en su GitHub. Haz commit y push al cerrar cada etapa estable, con `check_project.ps1` en verde. **No** cambies la configuración de Git (identidad, remotos) ni hagas `push --force` sin que lo pida.
 
 ## Skills del proyecto (`.claude/skills/`)
 

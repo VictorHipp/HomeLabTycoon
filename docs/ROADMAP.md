@@ -11,8 +11,9 @@
 | Hito | Estado |
 |---|---|
 | 0 — Entorno | ✅ Completado (2026-11-15). Detalle: [DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md) |
-| 1 — Habitación, cámara y movimiento | 🔶 **En curso** (aprobado e iniciado el 2026-11-15). Hecho: reestructuración de carpetas y *spike* visual (tarea 6: 16 modelos y escena de muestra, [ART_STYLE.md](ART_STYLE.md) §11). Pendiente: tareas 1–5 y 7, *runner* de pruebas y esqueleto de simulación y guardado |
+| 1 — Habitación, cámara y movimiento | 🔶 **En curso** (aprobado e iniciado el 2026-11-15). Hecho: reestructuración de carpetas, *spike* visual (16 modelos y escena de muestra, [ART_STYLE.md](ART_STYLE.md) §11) y *runner* de pruebas. Pendiente: tareas 1–5 y 7 |
 | 2–7 | Planificados (§2) |
+| **Prueba jugable de la primera misión** | 🔶 **En curso** (pedida por el usuario el 2026-11-15; adelanta partes de los Hitos 1–7, sin cuaderno ni guardado). **Hecho:** capa de simulación completa (`sim/`: catálogo por composición, tienda, pedidos y paquetes, colocación, rack, cableado, corriente, red analítica con DHCP y ping, terminal `ip`/`ping`, misión «Primer servidor») con 27 pruebas sin ventana, incluidas dos soluciones de la misión y casos negativos. **Pendiente:** presentación (personaje, cámara con giro por ratón, interacciones, tienda en el PC, paquetes, colocación, vista de rack, cables, terminal en pantalla, HUD de misión) y recorrido automático con capturas |
 
 Cada hito termina en una **versión jugable y estable**, con `check_project.ps1` en verde, criterios de aceptación cumplidos ([TEST_PLAN.md](TEST_PLAN.md) §4) y documentación al día.
 
@@ -164,6 +165,8 @@ Cada hito termina en una **versión jugable y estable**, con `check_project.ps1`
 Cada *spike* produce una nota breve con el resultado en el documento indicado y, si cambia el diseño, una actualización o un ADR.
 
 ## 5. Decisiones pendientes de aprobación
+
+**Estado (2026-11-15):** el usuario aprobó **todas las recomendaciones** de esta lista, salvo la 5 (tipografías; no se descarga ninguna: la terminal usa la fuente monoespaciada del sistema) y la 18 (subagente, sin decidir). La 16 (identidad visual) quedó aprobada tras ver la muestra («me encanta como se ve»). La 17 está hecha: primer commit y repositorio **público** https://github.com/VictorHipp/HomeLabTycoon.
 
 Cada decisión necesita **respuesta explícita** antes del hito que la usa. El resto del diseño de cada hito se aprueba al aprobar el inicio del hito ([README.md](README.md)). Los números son identificadores estables; están agrupados por el hito que los necesita.
 
