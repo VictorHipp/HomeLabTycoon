@@ -12,7 +12,13 @@
 >     - órdenes tecleadas tecla a tecla con Enter;
 >     - arrastre con el botón derecho y con el central (el giro cambia y el siguiente clic izquierdo sigue caminando).
 >
->     Ejecuta 4 escenarios de colocación del rack: `basic`, `wall` (rechazo con motivo y giro), `far` (el cable no llega, se desconecta con clic derecho y se mueve el rack) y `blocking` («no puedo llegar» y se mueve el rack con clic derecho). Cada escenario debe terminar con la misión completada. Guarda capturas y un registro en `build/walkthrough/` (sin versionar).
+>     Ejecuta 4 escenarios de colocación del rack. Cada escenario debe terminar con la misión completada, y el script falla si no llega a la línea `WALKTHROUGH <escenario> OK`:
+>     - `basic`: además gira la cámara arrastrando mientras coloca;
+>     - `wall`: rechazo con motivo y giro; al final, epílogo con «Desconectar todos los cables», «Recoger rack» rechazado con motivo, «Desmontar» ×2 y «Recoger rack»;
+>     - `far`: el cable no llega, se desconecta con clic derecho y se mueve el rack;
+>     - `blocking`: «no puedo llegar» y se mueve el rack con clic derecho.
+>
+>     Guarda capturas y un registro en `build/walkthrough/` (sin versionar). Comprobado a 1600×900 (`play.ps1`) y a 1280×720 (F5 en el editor) con `-Resolution`.
 >   - `tools/play.ps1`: comprobado a mano (2026-11-15). El proceso sigue vivo, la ventana responde y el registro `user://logs/godot.log` sale sin errores;
 >   - `tools/capture_showcase.ps1`: capturas para la revisión visual.
 > - **Diseño:** todo lo demás.

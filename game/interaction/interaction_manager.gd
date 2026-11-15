@@ -9,7 +9,7 @@ enum Mode { OVERVIEW, APPROACH, TRANSITION, CLOSEUP, SCREEN, CONSOLE, PLACEMENT 
 
 const HINT_OVERVIEW := "Clic: caminar o usar · Arrastrar con botón derecho o central: girar · Rueda: zoom · WASD: mover la vista · Q/E: girar · F: centrar · Clic derecho en el rack: moverlo"
 const HINT_CLOSEUP := "Esc: volver · R: cara frontal/trasera (rack) · Clic en un puerto: conectar el cable elegido · Clic derecho en un puerto: desconectar"
-const HINT_PLACEMENT := "Clic: colocar · R: girar 90° · Esc o clic derecho: cancelar"
+const HINT_PLACEMENT := "Clic: colocar · R: girar 90° · Arrastrar con botón derecho: girar la cámara · Esc o clic derecho: cancelar"
 const SNAP := 0.05
 const ZONE_FRONT_ALPHA := 0.45
 const ZONE_REAR_ALPHA := 0.22
@@ -104,7 +104,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				_move_ghost(motion.position)
 			elif button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
 				_confirm_placement()
-			elif (button != null and button.pressed and button.button_index == MOUSE_BUTTON_RIGHT) or event.is_action_pressed(&"close_interaction"):
+			elif button != null and button.button_index == MOUSE_BUTTON_RIGHT:
+				# Same rule as in the overview: dragging turns the camera, a click cancels.
+				if button.pressed:
+					_right_down = true
+					_right_press_pos = button.position
+				elif _right_down:
+					_right_down = false
+					if not session.rig.is_dragging() and button.position.distance_to(_right_press_pos) <= OverviewCameraRig.DRAG_THRESHOLD_PX:
+						_cancel_placement()
+			elif event.is_action_pressed(&"close_interaction"):
 				_cancel_placement()
 			elif event.is_action_pressed(&"rotate_object"):
 				_ghost_yaw = fposmod(_ghost_yaw + 90.0, 360.0)

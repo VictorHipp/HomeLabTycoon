@@ -83,9 +83,46 @@ func _steps() -> void:
 		return
 	if not await _server_ip(rack):
 		return
+	# The mission is validated from the simulated state: it completes as soon as the server
+	# has its IP. The centred banner can cover the monitor (1280×720), so close it first,
+	# as a player would.
+	if not await _end_banner():
+		return
 	if not await _ping_from_pc():
 		return
-	await _end_banner()
+	await _shot("final")
+	if scenario == "wall":
+		await _epilogue_pick_up(rack)
+
+
+## wall, after the mission: the panel buttons that undo everything (the mission stays completed).
+func _epilogue_pick_up(rack: SimDevice) -> void:
+	_note("11. Epílogo: desconectar todo, desmontar y recoger el rack (botones del panel)")
+	if not await _open(&"rack", rack.id):
+		return
+	if not await _press(_find_button(s.hud._side_box, "Desconectar todos los cables"), "Desconectar todos los cables"):
+		return
+	if s.world.has_cables_inside(rack):
+		_fail("quedan cables en el rack")
+		return
+	await _press(_find_button(s.hud._side_box, "Recoger rack"), "Recoger rack (con equipos dentro)")
+	if rack.location != &"placed" or not s.hud._toast.text.contains("Vacía antes"):
+		_fail("recoger un rack con equipos debe rechazarse con el motivo («%s»)" % s.hud._toast.text)
+		return
+	for _i: int in 2:
+		if not await _press(_find_button(s.hud._side_box, "Desmontar"), "Desmontar"):
+			return
+	if not s.world.mounted_in(rack).is_empty():
+		_fail("el rack no quedó vacío")
+		return
+	await _shot("rack_vacio")
+	if not await _press(_find_button(s.hud._side_box, "Recoger rack"), "Recoger rack"):
+		return
+	await _wait_mode(InteractionManager.Mode.OVERVIEW)
+	await _frames(20)
+	if rack.location != &"inventory":
+		_fail("el rack no volvió al inventario («%s»)" % s.hud._toast.text)
+	await _shot("rack_recogido")
 
 
 # ------------------------------------------------------------------- steps --
@@ -185,6 +222,13 @@ func _place_rack() -> SimDevice:
 		return null
 	match scenario:
 		"basic":
+			var centre := s.get_viewport().get_visible_rect().size / 2.0
+			var yaw0 := s.rig.target_yaw_deg
+			await _drag(centre, Vector2(90.0, 0.0), MOUSE_BUTTON_RIGHT)
+			if s.interaction.mode != InteractionManager.Mode.PLACEMENT or absf(s.rig.target_yaw_deg - yaw0) < 10.0:
+				_fail("arrastrar con el botón derecho mientras se coloca debe girar la cámara sin cancelar (modo %d)" % s.interaction.mode)
+			await _drag(centre, Vector2(-90.0, 0.0), MOUSE_BUTTON_RIGHT)
+			await _frames(30)
 			await _place_at(rack, GOOD_SPOT, GOOD_YAW, "colocando_rack")
 		"wall":
 			_note("  contra la pared: el frente mira a la pared derecha")
@@ -406,10 +450,13 @@ func _ping_from_pc() -> bool:
 	return true
 
 
-func _end_banner() -> void:
+func _end_banner() -> bool:
+	if not await _wait(func() -> bool: return s.hud._banner.visible, 5.0):
+		_fail("no apareció el cartel de misión completada")
+		return false
+	await _frames(5)
 	await _shot("mision_completada")
-	if s.world.mission.completed:
-		await _press(_find_button(s.hud, "Seguir jugando"), "Seguir jugando")
+	return await _press(_find_button(s.hud, "Seguir jugando"), "Seguir jugando")
 
 
 # ----------------------------------------------------------------- helpers --

@@ -61,7 +61,10 @@ CameraShot (Resource o Marker3D)  pose objetivo: transform, fov, near, límites 
 | Centrar en el personaje | `F` |
 | Velocidad del tiempo | Botones del HUD: pausa, ×1, ×2, ×4 y «Saltar espera» |
 
-Un clic derecho sin arrastre queda libre para el menú contextual futuro y para desconectar puertos en las vistas cercanas.
+Un clic derecho sin arrastre (el ratón se mueve ≤ 4 px) no gira la cámara:
+- **en la vista general,** sobre un rack colocado, lo mueve. Es una simplificación de la prueba en lugar del menú contextual ([INTERACTION_SYSTEM.md](INTERACTION_SYSTEM.md) §8.1);
+- **mientras se coloca un objeto,** cancela; arrastrar sigue girando la cámara;
+- **en las vistas cercanas,** desconecta el puerto.
 
 Desplazamiento por bordes de pantalla: opcional, desactivado por defecto.
 

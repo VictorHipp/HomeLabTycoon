@@ -103,6 +103,7 @@ func setup(sim_world: SimWorld) -> void:
 	_toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	bottom.add_child(_toast)
 	_tool = UiStyle.label("", 15, UiStyle.HIGHLIGHT)
+	_tool.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART # long placement previews at 1280 px
 	bottom.add_child(_tool)
 	var inv_panel := PanelContainer.new()
 	inv_panel.add_theme_stylebox_override("panel", UiStyle.panel())

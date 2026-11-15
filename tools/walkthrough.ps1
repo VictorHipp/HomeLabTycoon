@@ -29,7 +29,13 @@ foreach ($name in $names) {
     foreach ($line in $r.Errors) { Write-Host "  $line" }
     # Exit code 0 alone is not enough: closing the window also exits with 0.
     $finished = $r.StdOut -match "WALKTHROUGH $name OK"
-    if (-not $finished) { Write-Host "  (the run did not reach its end: no 'WALKTHROUGH $name OK' line, exit code $($r.ExitCode))" }
+    if (-not $finished) {
+        Write-Host "  (the run did not reach its end: no 'WALKTHROUGH $name OK' line, exit code $($r.ExitCode))"
+        Write-Host '  --- last lines of stdout ---'
+        ($r.StdOut -split "\r?\n") | Where-Object { $_ -ne '' } | Select-Object -Last 15 | ForEach-Object { Write-Host "  $_" }
+        Write-Host '  --- last lines of stderr ---'
+        ($r.StdErr -split "\r?\n") | Where-Object { $_ -ne '' } | Select-Object -Last 15 | ForEach-Object { Write-Host "  $_" }
+    }
     if ($r.TimedOut -or $r.ExitCode -ne 0 -or $r.Errors.Count -gt 0 -or -not $finished) { $failed += $name }
 }
 if ($failed.Count -gt 0) { Write-Host "WALKTHROUGH CHECK FAILED: $($failed -join ', ')"; exit 1 }
