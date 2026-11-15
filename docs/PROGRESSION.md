@@ -124,7 +124,9 @@ MissionDefinition (data/missions/*.tres)
   4. comprobar que ninguna ruta domina y que cada etapa tiene un cuello de botella distinto.
 - **Errores caros reversibles:** vender con pérdida, deshacer la colocación. El dinero negativo bloquea compras, no la partida.
 
-## 9. Misión del prototipo: «Primer servidor» `[PROPUESTA]`
+## 9. Misión del prototipo: «Primer servidor» `[CONFIRMADO: decisión 8, 2026-11-15]`
+
+> **Implementada** en `data/missions/first_server.tres` con 8 requisitos (los de la tabla, con «Enciende el switch y el servidor» y «Monta…» separados) y validada en `tests/integration/test_first_mission.gd`. Recompensa real: 600 créditos y 150 XP (el jugador pasa a nivel 2).
 
 > Contexto: quieres montar tu primer servidor en casa para empezar tu homelab.
 

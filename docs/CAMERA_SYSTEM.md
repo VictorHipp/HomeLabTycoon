@@ -43,15 +43,18 @@ CameraShot (Resource o Marker3D)  pose objetivo: transform, fov, near, límites 
 
 ### 3.1. Controles por defecto `[PROPUESTA]` (reasignables, ver ARCHITECTURE §10)
 
+**Implementado el 2026-11-15** (`game/camera/overview_camera_rig.gd`). Tras probar la muestra, el usuario pidió **girar con el ratón**: el giro por arrastre sustituye a los pasos de 45°.
+
 | Acción | Control |
 |---|---|
-| Mover personaje / seleccionar | Clic izquierdo |
-| Menú de acciones del objeto | Clic derecho |
-| Girar la cámara | Arrastrar con botón central · `Q` / `E` (pasos de 45°) |
+| Mover personaje / usar objeto | Clic izquierdo |
+| Girar la cámara | **Arrastrar con el botón derecho o con el central** (horizontal = giro, vertical = inclinación) · mantener `Q` / `E` (giro continuo y suave) |
 | Zoom | Rueda del ratón |
-| Desplazar el foco | `W` `A` `S` `D` / flechas · arrastrar con botón central + `Shift` |
-| Centrar en el personaje | `F` o doble clic sobre el personaje |
-| Velocidad del tiempo | `1` `2` `3` · pausa `Espacio` |
+| Desplazar el foco | `W` `A` `S` `D` / flechas |
+| Centrar en el personaje | `F` |
+| Velocidad del tiempo | Botones del HUD: pausa, ×1, ×2, ×4 y «Saltar espera» |
+
+Un clic derecho sin arrastre queda libre para el menú contextual futuro y para desconectar puertos en las vistas cercanas.
 
 Desplazamiento por bordes de pantalla: opcional, desactivado por defecto.
 
@@ -59,11 +62,14 @@ Desplazamiento por bordes de pantalla: opcional, desactivado por defecto.
 
 | Parámetro | Valor |
 |---|---|
-| Inclinación (pitch) | 35°–65°, inicial 50° |
-| Distancia al foco | 3–14 m, inicial 8 m |
-| FOV | 50° |
-| Suavizado de zoom y giro | amortiguado crítico, ≈ 0,15 s |
-| Límites del foco | caja de la habitación actual, con un margen |
+| Inclinación (pitch) | 25°–65°, inicial 30,6° (el encuadre de la muestra aprobada) |
+| Distancia al foco | 3–12 m, inicial 7,46 m |
+| FOV | 42° |
+| Suavizado de zoom y giro | exponencial, constante 10/s (≈ 0,1 s) |
+| Giro con teclado / ratón | 100°/s · 0,3° por píxel (invertible por eje) |
+| Límites del foco | caja de la habitación actual |
+
+Valores implementados el 2026-11-15, con pruebas en `tests/unit/test_camera_rig.gd`.
 
 ### 3.3. Paredes que tapan (corte de paredes) `[PROPUESTA]` `[SPIKE]`
 

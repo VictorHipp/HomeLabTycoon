@@ -7,6 +7,7 @@ Simulador 3D de construcción y administración de infraestructura informática.
 ## Estado actual
 
 - **Hito 0 (entorno) completado.**
+- **Prueba jugable de la primera misión: hecha** (2026-11-15; ver `docs/ROADMAP.md` §1). La escena principal es `game/main/main.tscn` → `GameSession` (`game/session/`). Tras cualquier cambio de presentación, ejecuta también `tools\walkthrough.ps1`: debe terminar en `WALKTHROUGH CHECK PASSED`.
 - **Hito 1 iniciado el 2026-11-15** (aprobado por el usuario).
   - **Hecho:** reestructuración de carpetas (`sim/`, `game/`) y *spike* visual con 16 modelos provisionales.
   - **Pendiente:** director de cámara, personaje con navegación, corte de paredes, *runner* de pruebas y esqueleto de simulación y guardado (`docs/ROADMAP.md` §2).
@@ -86,6 +87,12 @@ godot_console --headless --path . --check-only --script res://game/ruta.gd
 # Regenerar los modelos provisionales con Blender (los .glb se reimportan con check_project)
 & "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" --background --factory-startup `
     --python tools\blender\build_prototype_models.py -- --root . [--only id1,id2]
+
+# Jugar la prueba de la primera misión (igual que F5)
+powershell -ExecutionPolicy Bypass -File tools\play.ps1
+
+# Recorrido automático de la misión con clics sintéticos y capturas en docs\images\walkthrough\
+powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1
 
 # Ver la muestra de modelos (ventana) / generar capturas en docs\images\showcase\
 powershell -ExecutionPolicy Bypass -File tools\view_showcase.ps1

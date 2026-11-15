@@ -4,7 +4,9 @@
 > - **Existe hoy:**
 >   - `tests/smoke_test.gd`: carga todos los `.gd`, `.tscn` y `.tres` propios y comprueba el catálogo y la escena principal;
 >   - `tests/check_models.gd`: tamaño en metros, Y hacia arriba, marcadores y su orientación en cada `.glb`;
->   - `tools/check_project.ps1`: importación, smoke test, modelos y ejecución de la escena principal; falla con cualquier `ERROR`;
+>   - `tests/run_tests.gd`: *runner* propio (decisión 4) con 30 pruebas sin ventana (`tests/unit/`, `tests/integration/`): IPv4, catálogo, frontera `sim/`, terminal, cámara y la misión completa con dos soluciones y casos negativos;
+>   - `tools/check_project.ps1`: importación, smoke test, modelos, pruebas y ejecución de la escena principal; falla con cualquier `ERROR`;
+>   - `tools/walkthrough.ps1`: recorrido automático de la primera misión por la vía de entrada real (clics y teclas sintéticos sobre posiciones proyectadas), con una captura por paso y un registro; falla si la misión no se completa;
 >   - `tools/capture_showcase.ps1`: capturas para la revisión visual.
 > - **Diseño:** todo lo demás.
 
