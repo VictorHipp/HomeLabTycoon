@@ -4,9 +4,16 @@
 > - **Existe hoy:**
 >   - `tests/smoke_test.gd`: carga todos los `.gd`, `.tscn` y `.tres` propios y comprueba el catálogo y la escena principal;
 >   - `tests/check_models.gd`: tamaño en metros, Y hacia arriba, marcadores y su orientación en cada `.glb`;
->   - `tests/run_tests.gd`: *runner* propio (decisión 4) con 30 pruebas sin ventana (`tests/unit/`, `tests/integration/`): IPv4, catálogo, frontera `sim/`, terminal, cámara y la misión completa con dos soluciones y casos negativos;
+>   - `tests/run_tests.gd`: *runner* propio (decisión 4) con 37 pruebas sin ventana (`tests/unit/`, `tests/integration/`): IPv4, catálogo, frontera `sim/`, terminal, cámara, la misión completa con dos soluciones y casos negativos, y la colocación del rack (espacio de trabajo, alcance del cable de corriente, mover y recoger);
 >   - `tools/check_project.ps1`: importación, smoke test, modelos, pruebas y ejecución de la escena principal; falla con cualquier `ERROR`;
->   - `tools/walkthrough.ps1`: recorrido automático de la primera misión por la vía de entrada real (clics y teclas sintéticos sobre posiciones proyectadas), con una captura por paso y un registro; falla si la misión no se completa;
+>   - `tools/walkthrough.ps1`: recorrido automático de la primera misión **solo por la vía de entrada real**. No llama directamente a ningún método del juego; usa:
+>     - clics sintéticos sobre posiciones 3D proyectadas;
+>     - clics en el centro de los botones reales, comprobando que emiten `pressed`;
+>     - órdenes tecleadas tecla a tecla con Enter;
+>     - arrastre con el botón derecho y con el central (el giro cambia y el siguiente clic izquierdo sigue caminando).
+>
+>     Ejecuta 4 escenarios de colocación del rack: `basic`, `wall` (rechazo con motivo y giro), `far` (el cable no llega, se desconecta con clic derecho y se mueve el rack) y `blocking` («no puedo llegar» y se mueve el rack con clic derecho). Cada escenario debe terminar con la misión completada. Guarda capturas y un registro en `build/walkthrough/` (sin versionar).
+>   - `tools/play.ps1`: comprobado a mano (2026-11-15). El proceso sigue vivo, la ventana responde y el registro `user://logs/godot.log` sale sin errores;
 >   - `tools/capture_showcase.ps1`: capturas para la revisión visual.
 > - **Diseño:** todo lo demás.
 

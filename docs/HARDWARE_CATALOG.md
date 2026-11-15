@@ -79,7 +79,7 @@ HardwareDefinition               (común a todo producto)
   box_contents: Array[StringName]   (accesorios incluidos)
   scene: PackedScene
 
-DeviceSpec (base abstracta) ─┬─ RackSpec (capacity_u, depth_mm, open/closed)
+DeviceSpec (base abstracta) ─┬─ RackSpec (capacity_u, depth_mm, open/closed, service_clearance_m)
                              ├─ ComputeSpec (cores, ram_gb, ram_slots, cpu_socket, drive_bays)
                              ├─ StorageSpec (capacity_gb, interface, form_factor)
                              ├─ SwitchSpec (managed, vlan_support, l3, switching_capacity)

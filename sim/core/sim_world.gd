@@ -269,14 +269,32 @@ static func footprint_rect(def: HardwareDefinition, pos: Vector3, yaw_degrees: f
 	return Rect2(pos.x - size.x / 2.0, pos.z - size.y / 2.0, size.x, size.y)
 
 
+## Floor areas that must stay free in front of and behind a rack ([front, rear]). The front is
+## the local +Z side (where the model's front faces). Empty for devices without clearance.
+static func service_zones(def: HardwareDefinition, pos: Vector3, yaw_degrees: float) -> Array[Rect2]:
+	var result: Array[Rect2] = []
+	var rack := def.get_spec(RackSpec) as RackSpec
+	if rack == null or rack.service_clearance_m <= 0.0:
+		return result
+	var c := rack.service_clearance_m
+	var yaw := deg_to_rad(round(yaw_degrees / 90.0) * 90.0)
+	var forward := Vector2(roundf(sin(yaw)), roundf(cos(yaw))) # (x, z)
+	var size := Vector2(def.footprint_m.x, c) if absf(forward.y) > 0.5 else Vector2(c, def.footprint_m.x)
+	for side: float in [1.0, -1.0]:
+		var center := Vector2(pos.x, pos.z) + forward * side * (def.footprint_m.y + c) / 2.0
+		result.append(Rect2(center - size / 2.0, size))
+	return result
+
+
 ## Read-only placement check: "" if the device fits there, otherwise the reason (for previews).
+## Works for devices in the inventory and for moving a device already placed.
 func placement_problem(device_id: int, pos: Vector3, yaw_degrees: float) -> String:
 	var d := get_device(device_id)
 	if d == null or not (d.location in [&"inventory", &"placed"]):
 		return tr("Ese objeto no está en tu inventario.")
 	if d.definition.placement != &"floor":
 		return tr("%s no se coloca en el suelo.") % d.display_name()
-	if d.location == &"placed" and _has_cables_inside(d):
+	if d.location == &"placed" and has_cables_inside(d):
 		return tr("Desconecta antes los cables de %s.") % d.display_name()
 	var rect := footprint_rect(d.definition, pos, yaw_degrees)
 	if not room_bounds.encloses(rect):
@@ -284,14 +302,25 @@ func placement_problem(device_id: int, pos: Vector3, yaw_degrees: float) -> Stri
 	for obstacle: Rect2 in obstacles:
 		if rect.intersects(obstacle):
 			return tr("No cabe ahí: choca con un mueble.")
-	for other: SimDevice in devices.values():
-		if other != d and other.location in [&"placed", &"fixed"] and other.definition.placement == &"floor":
-			if rect.intersects(footprint_rect(other.definition, other.position, other.yaw_degrees)):
-				return tr("No cabe ahí: choca con %s.") % other.display_name()
+	for other: SimDevice in _floor_devices(d):
+		if rect.intersects(footprint_rect(other.definition, other.position, other.yaw_degrees)):
+			return tr("No cabe ahí: choca con %s.") % other.display_name()
 	for package: Dictionary in packages.values():
-		var p: Vector3 = package["position"]
-		if rect.intersects(Rect2(p.x - PACKAGE_FOOTPRINT.x / 2, p.z - PACKAGE_FOOTPRINT.y / 2, PACKAGE_FOOTPRINT.x, PACKAGE_FOOTPRINT.y)):
+		if rect.intersects(_package_rect(package)):
 			return tr("No cabe ahí: hay un paquete en medio.")
+	for other: SimDevice in _floor_devices(d):
+		for zone: Rect2 in service_zones(other.definition, other.position, other.yaw_degrees):
+			if rect.intersects(zone):
+				return tr("No cabe ahí: taparía el espacio de trabajo de %s.") % other.display_name()
+	var rack := d.definition.get_spec(RackSpec) as RackSpec
+	for zone: Rect2 in service_zones(d.definition, pos, yaw_degrees):
+		var blocked := not room_bounds.encloses(zone)
+		for obstacle: Rect2 in obstacles:
+			blocked = blocked or zone.intersects(obstacle)
+		for other: SimDevice in _floor_devices(d):
+			blocked = blocked or zone.intersects(footprint_rect(other.definition, other.position, other.yaw_degrees))
+		if blocked:
+			return tr("Deja al menos %d cm libres delante y detrás de %s: hacen falta para trabajar en su frontal y en su trasera.") % [roundi(rack.service_clearance_m * 100.0), d.display_name()]
 	return ""
 
 
@@ -300,19 +329,54 @@ func place_device(device_id: int, pos: Vector3, yaw_degrees: float) -> CommandRe
 	if problem != "":
 		return CommandResult.failure(problem)
 	var d := get_device(device_id)
+	var moved := d.location == &"placed"
 	d.location = &"placed"
 	d.position = Vector3(pos.x, 0.0, pos.z)
 	d.yaw_degrees = fposmod(round(yaw_degrees / 90.0) * 90.0, 360.0)
 	_emit(&"device_placed", {"device_id": d.id})
 	_refresh()
-	return CommandResult.success(tr("%s colocado.") % d.display_name())
+	return CommandResult.success((tr("%s movido.") if moved else tr("%s colocado.")) % d.display_name())
+
+
+## Floor devices in the room other than `except`.
+func _floor_devices(except: SimDevice) -> Array[SimDevice]:
+	var result: Array[SimDevice] = []
+	for other: SimDevice in devices.values():
+		if other != except and other.location in [&"placed", &"fixed"] and other.definition.placement == &"floor":
+			result.append(other)
+	return result
+
+
+func _package_rect(package: Dictionary) -> Rect2:
+	var p: Vector3 = package["position"]
+	return Rect2(p.x - PACKAGE_FOOTPRINT.x / 2, p.z - PACKAGE_FOOTPRINT.y / 2, PACKAGE_FOOTPRINT.x, PACKAGE_FOOTPRINT.y)
+
+
+## Placement preview help for a rack: power cable length that a device in its top unit would
+## need to reach the nearest power strip (same rule as connect_cable) and the longest power
+## cable in the catalog. {} for devices that are not racks.
+func rack_power_estimate(def: HardwareDefinition, pos: Vector3, yaw_degrees: float) -> Dictionary:
+	var rack := def.get_spec(RackSpec) as RackSpec
+	if rack == null:
+		return {}
+	var anchor := rack_unit_anchor(def, pos, yaw_degrees, rack.capacity_u)
+	var needed := INF
+	for strip: SimDevice in devices_of(&"power"):
+		if strip.is_in_world():
+			needed = minf(needed, cable_length_needed(device_anchor(strip), anchor))
+	var longest := 0.0
+	for item: HardwareDefinition in catalog.items.values():
+		var cable := item.get_spec(CableSpec) as CableSpec
+		if cable != null and cable.media == &"power":
+			longest = maxf(longest, cable.length_m)
+	return {"needed": needed, "longest": longest}
 
 
 func pick_up_device(device_id: int) -> CommandResult:
 	var d := get_device(device_id)
 	if d == null or d.location != &"placed":
 		return CommandResult.failure(tr("Solo se pueden recoger objetos colocados en el suelo."))
-	if _has_cables_inside(d) or not mounted_in(d).is_empty():
+	if has_cables_inside(d) or not mounted_in(d).is_empty():
 		return CommandResult.failure(tr("Vacía antes %s y desconecta sus cables.") % d.display_name())
 	d.location = &"inventory"
 	_emit(&"device_removed", {"device_id": d.id})
@@ -359,7 +423,7 @@ func unmount_device(device_id: int) -> CommandResult:
 	var d := get_device(device_id)
 	if d == null or d.location != &"mounted":
 		return CommandResult.failure(tr("Ese equipo no está montado en un rack."))
-	if _has_cables_inside(d):
+	if has_cables_inside(d):
 		return CommandResult.failure(tr("Desconecta antes los cables de %s.") % d.display_name())
 	d.location = &"inventory"
 	d.rack_id = -1
@@ -375,10 +439,20 @@ func device_anchor(d: SimDevice) -> Vector3:
 		return d.position
 	if d.location == &"mounted":
 		var rack := get_device(d.rack_id)
-		var spec := rack.definition.get_spec(RackSpec) as RackSpec
-		var local := Vector3(0.0, spec.first_unit_height_m + (d.rack_u - 0.5) * RACK_UNIT_M, spec.depth_m * 0.5)
-		return rack.position + local.rotated(Vector3.UP, deg_to_rad(rack.yaw_degrees))
+		return rack_unit_anchor(rack.definition, rack.position, rack.yaw_degrees, d.rack_u)
 	return Vector3.ZERO
+
+
+## Approximate world position of unit `u` of a rack at `rack_pos` / `rack_yaw` (front face).
+static func rack_unit_anchor(rack_def: HardwareDefinition, rack_pos: Vector3, rack_yaw: float, u: int) -> Vector3:
+	var spec := rack_def.get_spec(RackSpec) as RackSpec
+	var local := Vector3(0.0, spec.first_unit_height_m + (u - 0.5) * RACK_UNIT_M, spec.depth_m * 0.5)
+	return rack_pos + local.rotated(Vector3.UP, deg_to_rad(rack_yaw))
+
+
+## Cable length needed between two points: straight distance × routing factor + slack.
+static func cable_length_needed(a: Vector3, b: Vector3) -> float:
+	return a.distance_to(b) * CABLE_ROUTING_FACTOR + CABLE_SLACK_M
 
 
 # ---------------------------------------------------------------- power ------
@@ -492,7 +566,7 @@ func connect_cable(cable_id: int, port_ref: String) -> CommandResult:
 		var first_group := get_device(PortRef.device_id(first)).definition.find_port_group(PortRef.group(first))
 		if first_group.kind == group.kind:
 			return CommandResult.failure(tr("Un cable de corriente une una toma de la regleta con la entrada de alimentación de un equipo."))
-	var needed := device_anchor(get_device(PortRef.device_id(first))).distance_to(device_anchor(target)) * CABLE_ROUTING_FACTOR + CABLE_SLACK_M
+	var needed := cable_length_needed(device_anchor(get_device(PortRef.device_id(first))), device_anchor(target))
 	if needed > spec.length_m:
 		return CommandResult.failure(tr("El cable no llega: hacen falta unos %.1f m y este mide %.0f m.") % [needed, spec.length_m])
 	ends["b"] = port_ref
@@ -522,7 +596,8 @@ func disconnect_port(port_ref: String) -> CommandResult:
 	return CommandResult.success(tr("Cable desconectado y devuelto al inventario."))
 
 
-func _has_cables_inside(d: SimDevice) -> bool:
+## True if the device, or anything mounted in it, has a cable plugged in (even a loose end).
+func has_cables_inside(d: SimDevice) -> bool:
 	var inside: Array[SimDevice] = [d]
 	inside.append_array(mounted_in(d))
 	for device: SimDevice in inside:

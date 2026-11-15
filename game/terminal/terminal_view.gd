@@ -47,6 +47,8 @@ func setup(sim_world: SimWorld, device_id: int, user: String) -> void:
 	input.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
 	input.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	input.caret_blink = true
+	# Since Godot 4.4 a LineEdit stops editing after Enter by default; a terminal must keep it.
+	input.keep_editing_on_text_submit = true
 	input.text_submitted.connect(_on_submit)
 	input.gui_input.connect(_on_input_gui)
 	line.add_child(input)
@@ -58,6 +60,7 @@ func setup(sim_world: SimWorld, device_id: int, user: String) -> void:
 
 func focus_input() -> void:
 	input.grab_focus()
+	input.edit()
 
 
 func run_line(text: String) -> void:

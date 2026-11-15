@@ -11,6 +11,8 @@ const MONITOR_POSITION := Vector3(0.40, 0.75, -1.30)
 const KEYBOARD_POSITION := Vector3(0.40, 0.75, -1.02)
 const CHARACTER_START := Vector3(0.35, 0.0, 0.55)
 const HUD_REFRESH_SECONDS := 0.25
+const CAMERA_ROOM_MARGIN := 0.12 ## Close-up cameras never go closer than this to a wall.
+const STAND_ROOM_MARGIN := 0.25 ## Stand points stay on walkable floor (agent radius 0.2).
 
 var world: SimWorld
 var room: RoomView
@@ -193,7 +195,7 @@ func stand_point(kind: StringName, target_id: int) -> Vector3:
 		&"rack":
 			var rack_view := device_views[target_id] as DeviceView
 			var marker := ModelUtil.marker_transform(rack_view.model, "STAND_POINT")
-			return rack_view.global_transform * (marker["transform"] as Transform3D).origin
+			return clamp_to_room(rack_view.global_transform * (marker["transform"] as Transform3D).origin, STAND_ROOM_MARGIN)
 	var view := device_views[target_id] as DeviceView
 	var pos := view.global_position
 	var toward_room := Vector3(-pos.x, 0.0, -pos.z).normalized()
@@ -217,7 +219,22 @@ func screen_anchor() -> Transform3D:
 func rack_anchor(rack_id: int, rear: bool) -> Transform3D:
 	var rack_view := device_views[rack_id] as DeviceView
 	var marker := ModelUtil.marker_transform(rack_view.model, "CAM_rack_rear" if rear else "CAM_rack_front")
-	return rack_view.global_transform * (marker["transform"] as Transform3D)
+	var anchor := rack_view.global_transform * (marker["transform"] as Transform3D)
+	# The model's anchor is 0.8 m from the face; with the rack's 0.5 m service clearance it can
+	# fall behind a wall. Then the camera moves into the room and looks at the face again.
+	var bounds := rack_view.local_bounds
+	var c := bounds.get_center()
+	var face := rack_view.global_transform * Vector3(c.x, c.y, bounds.position.z if rear else bounds.end.z)
+	var origin := clamp_to_room(anchor.origin, CAMERA_ROOM_MARGIN)
+	if origin.is_equal_approx(anchor.origin):
+		return anchor
+	return Transform3D(Basis.looking_at(face - origin, Vector3.UP), origin)
+
+
+## `point` moved horizontally inside the room, `margin` metres away from the walls.
+func clamp_to_room(point: Vector3, margin: float) -> Vector3:
+	var b := world.room_bounds.grow(-margin)
+	return Vector3(clampf(point.x, b.position.x, b.end.x), point.y, clampf(point.z, b.position.y, b.end.y))
 
 
 ## Generic close-up: look at the device from the side where its ports are.
@@ -234,9 +251,7 @@ func device_anchor(device_id: int) -> Transform3D:
 	if absf(dir.y) > 0.9:
 		dir = (Vector3.UP * 0.75 + toward_room * 0.65).normalized()
 	var size := view.local_bounds.size.length()
-	var origin := center + dir * clampf(size * 1.4, 0.55, 1.4) + Vector3(0.0, 0.18, 0.0)
-	origin.x = clampf(origin.x, -1.65, 1.65)
-	origin.z = clampf(origin.z, -1.4, 1.4)
+	var origin := clamp_to_room(center + dir * clampf(size * 1.4, 0.55, 1.4) + Vector3(0.0, 0.18, 0.0), CAMERA_ROOM_MARGIN)
 	return Transform3D(Basis.looking_at(center - origin, Vector3.UP), origin)
 
 
@@ -253,7 +268,8 @@ func create_rack_slots(rack_id: int) -> Array[Area3D]:
 		area.monitoring = false
 		var shape := CollisionShape3D.new()
 		var box := BoxShape3D.new()
-		box.size = Vector3(0.45, SimWorld.RACK_UNIT_M * 0.95, 0.05)
+		# Thin: with a steep close-up camera a deep box would let the unit above catch the click.
+		box.size = Vector3(0.45, SimWorld.RACK_UNIT_M * 0.95, 0.01)
 		shape.shape = box
 		area.add_child(shape)
 		area.set_meta("u", u)

@@ -2,7 +2,9 @@ extends TestCase
 ## The first mission played only through simulation commands (docs/TEST_PLAN.md H7-01):
 ## two different valid solutions, and one negative case per requirement.
 
-const RACK_POS := Vector3(1.2, 0.0, -0.3)
+## Same spot as the automated walkthrough: front towards the room, rear towards the right wall.
+const RACK_POS := Vector3(0.9, 0.0, 0.5)
+const RACK_YAW := 270.0
 
 var world: SimWorld
 
@@ -56,7 +58,7 @@ func _build_rack() -> Array[SimDevice]:
 	var rack := _first_in_inventory(&"rack_12u_open")
 	var sw := _first_in_inventory(&"switch_16p_1u")
 	var srv := _first_in_inventory(&"server_1u_entry")
-	assert_true(world.place_device(rack.id, RACK_POS, 0.0).ok, "place rack")
+	assert_true(world.place_device(rack.id, RACK_POS, RACK_YAW).ok, "place rack")
 	assert_true(world.mount_device(sw.id, rack.id, 9).ok, "mount switch")
 	assert_true(world.mount_device(srv.id, rack.id, 5).ok, "mount server")
 	var strip := _one(&"power")
@@ -200,7 +202,7 @@ func test_mounting_rules() -> void:
 	assert_false(world.mount_device(sw.id, rack.id, 1).ok, "rack must be placed first")
 	assert_false(world.place_device(rack.id, Vector3(-1.2, 0, -0.5), 0.0).ok, "cannot place on the bed")
 	assert_false(world.place_device(rack.id, Vector3(1.7, 0, 0.0), 0.0).ok, "cannot place outside the room")
-	assert_true(world.place_device(rack.id, RACK_POS, 0.0).ok, "place rack")
+	assert_true(world.place_device(rack.id, RACK_POS, RACK_YAW).ok, "place rack")
 	assert_true(world.mount_device(sw.id, rack.id, 12).ok, "top unit is valid")
 	assert_false(world.mount_device(srv.id, rack.id, 12).ok, "unit already taken")
 	assert_false(world.mount_device(srv.id, rack.id, 13).ok, "beyond capacity")

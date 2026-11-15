@@ -7,16 +7,25 @@ Simulador 3D de construcción y administración de infraestructura informática.
 ## Estado actual
 
 - **Hito 0 (entorno) completado.**
-- **Prueba jugable de la primera misión: hecha** (2026-11-15; ver `docs/ROADMAP.md` §1). La escena principal es `game/main/main.tscn` → `GameSession` (`game/session/`). Tras cualquier cambio de presentación, ejecuta también `tools\walkthrough.ps1`: debe terminar en `WALKTHROUGH CHECK PASSED`.
-- **Hito 1 iniciado el 2026-11-15** (aprobado por el usuario).
-  - **Hecho:** reestructuración de carpetas (`sim/`, `game/`) y *spike* visual con 16 modelos provisionales.
-  - **Pendiente:** director de cámara, personaje con navegación, corte de paredes, *runner* de pruebas y esqueleto de simulación y guardado (`docs/ROADMAP.md` §2).
+- **Prueba jugable de la primera misión: hecha** (2026-11-15; ver `docs/ROADMAP.md` §1). La escena principal es `game/main/main.tscn` → `GameSession` (`game/session/`). Tras cualquier cambio de presentación, ejecuta también `tools\walkthrough.ps1` (4 escenarios de colocación del rack, solo con entrada sintética real): debe terminar en `WALKTHROUGH CHECK PASSED`.
+- **Hito 1 (habitación, cámara y movimiento):** sus tareas 1–7 están hechas dentro de la prueba jugable.
+  - **Hecho:** habitación, director de cámara, vista general con giro por ratón, corte automático de paredes, personaje con navegación y aviso de inalcanzable, iluminación y estilo aprobados, y `GameSession` con `SimWorld` y reloj.
+  - **Pendiente para cerrarlo:**
+    - alternar los tres modos de paredes (H1-06; solo existe el corte automático);
+    - medir los FPS (H1-07);
+    - opinión del usuario sobre la sensación de la cámara (*spike* S1);
+    - coste de rehornear la navegación (S3).
+- **Deuda declarada:**
+  - **Decisión 20 sin cumplir:** `sim/` aún no tiene `save_state` / `load_state` ni guardado.
+  - **Terminal:** los textos de error de la terminal están `[POR VERIFICAR]`, no emulan el idioma del sistema simulado y no usan claves de traducción.
 - **Código existente:**
-  - escena provisional `game/main/main.tscn`;
-  - `HardwareDefinition` y `PortDefinition` (`sim/hardware/`) y un item de catálogo;
-  - escena de muestra de modelos `game/showcase/model_showcase.tscn` (herramienta de desarrollo);
-  - modelos `.glb` en `assets/models/` generados por `tools/blender/build_prototype_models.py` (fuentes `.blend` en `art_source/`);
-  - pruebas `tests/smoke_test.gd` y `tests/check_models.gd`.
+  - `sim/`: simulación pura (mundo, catálogo, red, terminal y misiones);
+  - `data/`: catálogo y misión;
+  - `game/`: presentación;
+  - `tests/`: 37 pruebas sin ventana, *smoke test* y comprobación de modelos;
+  - `tools/`: scripts.
+
+  Detalle en `docs/ARCHITECTURE.md` y en ROADMAP §1.
 - **El resto de `docs/` es diseño.**
 
 ## Decisiones confirmadas por el usuario (reglas vigentes)
@@ -91,8 +100,9 @@ godot_console --headless --path . --check-only --script res://game/ruta.gd
 # Jugar la prueba de la primera misión (igual que F5)
 powershell -ExecutionPolicy Bypass -File tools\play.ps1
 
-# Recorrido automático de la misión con clics sintéticos y capturas en docs\images\walkthrough\
-powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1
+# Recorrido automático de la misión (clics en el mundo y en botones reales, órdenes tecleadas,
+# arrastre de cámara) en 4 escenarios del rack; capturas en build\walkthrough\<escenario>\ (no versionado)
+powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1 [-Scenario basic|wall|far|blocking]
 
 # Ver la muestra de modelos (ventana) / generar capturas en docs\images\showcase\
 powershell -ExecutionPolicy Bypass -File tools\view_showcase.ps1

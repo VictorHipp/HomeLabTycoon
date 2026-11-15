@@ -1,6 +1,6 @@
 # INTERACTION_SYSTEM — Interacción con objetos
 
-> **Estado:** diseño; nada implementado. Requisitos `[CONFIRMADO]` (documento maestro §2.2, §2.3, §7–9). Solución `[PROPUESTA]`. Cámara y transiciones en [CAMERA_SYSTEM.md](CAMERA_SYSTEM.md); reglas técnicas de cables y enlaces en [NETWORK_SIMULATION.md](NETWORK_SIMULATION.md).
+> **Estado:** una versión simplificada está implementada en la prueba jugable de la primera misión (2026-11-15; `game/interaction/interaction_manager.gd`; lo implementado de la colocación está en §8.1 y el resumen, en [ROADMAP.md](ROADMAP.md) §1). El resto es diseño. Requisitos `[CONFIRMADO]` (documento maestro §2.2, §2.3, §7–9). Solución `[PROPUESTA]`. Cámara y transiciones en [CAMERA_SYSTEM.md](CAMERA_SYSTEM.md); reglas técnicas de cables y enlaces en [NETWORK_SIMULATION.md](NETWORK_SIMULATION.md).
 
 ## 1. Requisitos `[CONFIRMADO]`
 
@@ -96,6 +96,36 @@ Mecanismo en el Hito 2; funcionalidad completa en el Hito 4.
   1. visual inmediata, por solape de formas de colisión con `ShapeCast3D`;
   2. definitiva, con el comando `PlaceObject` validado por la simulación (espacio, superficie adecuada: un rack va en el suelo y un switch de sobremesa en un mueble).
 - **Al confirmar:** se actualiza la navegación ([CAMERA_SYSTEM.md](CAMERA_SYSTEM.md) §4). Si el objeto deja una zona inaccesible, se avisa.
+
+### 8.1. Implementado en la prueba jugable (2026-11-15)
+
+**Fantasma:** rejilla de 0,05 m y giro de 90° con `R`. La vista previa usa las mismas reglas que la simulación (`SimWorld.placement_problem`), no un `ShapeCast3D`, e indica por qué no cabe. Regla de presentación añadida: no se puede soltar encima del personaje.
+
+**Espacio de trabajo del rack** `[PROPUESTA]` (implementada; puedes vetarla):
+- **Regla:** 50 cm libres delante y detrás del rack (`RackSpec.service_clearance_m`), dentro de la habitación y sin muebles ni equipos.
+- **Motivo:**
+  - el jugador necesita llegar al frontal para montar;
+  - la cámara necesita sitio detrás para cablear.
+
+  Antes de esta regla, un rack contra la pared dejaba la trasera inaccesible y la misión no se podía terminar.
+- **Indicación en el suelo:** al colocar, el suelo marca las dos zonas. La clara es el frente.
+- **Protección de las zonas:** nada puede colocarse después dentro de ellas.
+- **Rechazo:** si no cabe, el mensaje lo explica («Deja al menos 50 cm libres delante y detrás…»). Al girarlo 90° suele caber.
+
+**Aviso de alcance:** si los equipos del rack necesitarían un cable de corriente más largo que el más largo del catálogo, la vista previa lo avisa. Usa la misma regla de longitud que `connect_cable`. Es un aviso: no impide colocarlo.
+
+**Mover y recoger** (salidas de un mal sitio):
+- **Mover:**
+  - con clic derecho sobre un rack colocado, en la vista general. No hace falta caminar hasta él, así que un rack que cierra el paso siempre se puede mover;
+  - o con el botón «Mover rack» del panel del rack.
+
+  Se mueve con lo que tenga montado. Antes hay que desconectar sus cables: lo indica el mensaje, y existe el botón «Desconectar todos los cables».
+- **Recoger:** botón «Recoger rack». Solo si está vacío y sin cables; vuelve al inventario.
+- **Inaccesible:** si el rack deja algo fuera de alcance, no se avisa al colocarlo (pendiente). Al intentar ir allí, el personaje responde: «No puedo llegar ahí. Si el rack cierra el paso, muévelo con clic derecho sobre él».
+
+**Clic derecho:** en la prueba, el clic derecho sin arrastre sobre un rack lo mueve directamente, sin menú contextual (§3). El arrastre con el botón derecho sigue girando la cámara.
+
+**Comprobado** en `tests/integration/test_rack_placement.gd` y en los 4 escenarios de `tools\walkthrough.ps1` ([TEST_PLAN.md](TEST_PLAN.md)).
 
 ## 9. UX del cableado (Hito 4) `[PROPUESTA]`
 

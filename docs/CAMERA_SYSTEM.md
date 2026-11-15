@@ -2,7 +2,14 @@
 
 > **Aprobación:** el diseño por defecto de este documento queda aprobado para el Hito 1 al aprobar el usuario el inicio del hito (2026-11-15). Los cambios importantes se consultan antes ([README.md](README.md)).
 >
-> **Estado:** diseño; nada implementado. Requisitos `[CONFIRMADO]` (documento maestro §2). Solución técnica `[PROPUESTA]`. Las clases de Godot citadas existen en 4.7.2 `[VERIFICADO: sonda ClassDB headless, 2026-11-15]`; que funcionen como se describe se valida con *spikes*.
+> **Estado:** implementado en la prueba jugable (2026-11-15). Incluye la vista general (§3.1), el director con transición en dos fases, el corte automático de paredes (variante de malla baja) y el movimiento del personaje con navegación.
+>
+> **Pendiente:**
+> - alternar los tres modos de paredes;
+> - la opción «reducir movimiento» en los ajustes (existe en el director, pero no en la interfaz);
+> - los *spikes* S1 (tu opinión sobre la sensación) y S3.
+>
+> Requisitos `[CONFIRMADO]` (documento maestro §2). Solución técnica `[PROPUESTA]`. Las clases de Godot citadas existen en 4.7.2 `[VERIFICADO: sonda ClassDB headless, 2026-11-15]`.
 
 ## 1. Requisitos `[CONFIRMADO]`
 
@@ -154,6 +161,10 @@ Cada ancla declara qué se permite:
 
 - Las anclas las coloca el diseñador del modelo, con espacio libre.
 - Al entrar, un rayo comprueba que no hay obstáculos entre el ancla y el objeto (otro rack delante, un mueble). Si los hay, se usa una alternativa: retroceder por el eje de mirada hasta tener visión libre.
+- **Implementado (2026-11-15), versión simple:**
+  - Las anclas del rack están a 0,8 m de su cara, y el rack exige 50 cm libres ([INTERACTION_SYSTEM.md](INTERACTION_SYSTEM.md) §8.1). Cuando el ancla queda detrás de una pared, la cámara se desplaza dentro de la habitación (a 0,12 m de la pared) y vuelve a mirar la cara del rack. La vista queda más inclinada, pero se ven y se pulsan todos los puertos.
+  - El punto donde se coloca el personaje también se mantiene dentro de la habitación.
+  - El rayo contra obstáculos no está implementado.
 
 ## 6. Estados y enrutado de la entrada `[PROPUESTA]`
 

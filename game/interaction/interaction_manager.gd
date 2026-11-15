@@ -7,10 +7,12 @@ extends Node
 
 enum Mode { OVERVIEW, APPROACH, TRANSITION, CLOSEUP, SCREEN, CONSOLE, PLACEMENT }
 
-const HINT_OVERVIEW := "Clic: caminar o usar · Arrastrar con botón derecho o central: girar · Rueda: zoom · WASD: mover la vista · Q/E: girar · F: centrar"
+const HINT_OVERVIEW := "Clic: caminar o usar · Arrastrar con botón derecho o central: girar · Rueda: zoom · WASD: mover la vista · Q/E: girar · F: centrar · Clic derecho en el rack: moverlo"
 const HINT_CLOSEUP := "Esc: volver · R: cara frontal/trasera (rack) · Clic en un puerto: conectar el cable elegido · Clic derecho en un puerto: desconectar"
 const HINT_PLACEMENT := "Clic: colocar · R: girar 90° · Esc o clic derecho: cancelar"
 const SNAP := 0.05
+const ZONE_FRONT_ALPHA := 0.45
+const ZONE_REAR_ALPHA := 0.22
 
 var session: GameSession
 var mode: Mode = Mode.OVERVIEW
@@ -29,6 +31,11 @@ var _ghost: Node3D = null
 var _ghost_device: int = -1
 var _ghost_yaw: float = 0.0
 var _ghost_pos: Vector3 = Vector3.ZERO
+var _hidden_views: Array[Node3D] = []
+var _zone_meshes: Array[MeshInstance3D] = [] ## [front, rear] service zones of a rack ghost.
+var _pending_move: int = -1 ## Rack to move once the camera is back in the overview.
+var _right_down: bool = false
+var _right_press_pos: Vector2 = Vector2.ZERO
 var _console: CanvasLayer = null
 
 
@@ -64,6 +71,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		Mode.OVERVIEW, Mode.APPROACH:
 			if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
 				_click_world(button.position)
+			elif button != null and button.button_index == MOUSE_BUTTON_RIGHT:
+				# Right button: dragging turns the camera (OverviewCameraRig); a click without
+				# dragging acts on the object under the cursor. Works whichever node sees the
+				# release first: after a drag the rig either still reports it or consumes it.
+				if button.pressed:
+					_right_down = true
+					_right_press_pos = button.position
+				elif _right_down:
+					_right_down = false
+					if not session.rig.is_dragging() and button.position.distance_to(_right_press_pos) <= OverviewCameraRig.DRAG_THRESHOLD_PX:
+						_right_click_world(button.position)
 		Mode.TRANSITION:
 			if button != null and button.pressed:
 				session.director.skip()
@@ -146,6 +164,32 @@ func _click_world(screen_pos: Vector2) -> void:
 			session.spawn_click_marker(hit["position"])
 
 
+## Right click in the overview: move a placed rack directly (no need to walk to it, so a rack
+## that blocks the way can always be moved).
+func _right_click_world(screen_pos: Vector2) -> void:
+	var hit := _ray(screen_pos, Layers.WORLD_PICK)
+	if hit.is_empty() or not (hit["collider"] as Node).has_meta("device_id"):
+		return
+	var d := session.world.get_device((hit["collider"] as Node).get_meta("device_id"))
+	if d.location == &"mounted":
+		d = session.world.get_device(d.rack_id)
+	if d.location == &"placed":
+		start_move(d.id)
+	elif d.location == &"fixed":
+		session.hud.show_toast(TranslationServer.translate("%s forma parte de la habitación: en esta prueba no se mueve.") % d.display_name(), false)
+
+
+## Starts moving a placed device (with whatever is mounted in it). Cables must be unplugged.
+func start_move(device_id: int) -> void:
+	var d := session.world.get_device(device_id)
+	if d == null or d.location != &"placed":
+		return
+	if session.world.has_cables_inside(d):
+		session.hud.show_toast(TranslationServer.translate("Desconecta antes los cables de %s para moverlo (en su vista cercana: «Desconectar todos los cables»).") % d.display_name(), false)
+		return
+	_start_placement(d, true)
+
+
 func _begin(kind: StringName, target_id: int) -> void:
 	_target_kind = kind
 	_target_id = target_id
@@ -157,7 +201,12 @@ func _begin(kind: StringName, target_id: int) -> void:
 
 func _on_unreachable() -> void:
 	mode = Mode.OVERVIEW
-	session.hud.show_toast(TranslationServer.translate("No puedo llegar ahí."), false)
+	var text: String = TranslationServer.translate("No puedo llegar ahí.")
+	for rack: SimDevice in session.world.devices_of(&"rack"):
+		if rack.location == &"placed":
+			text += " " + TranslationServer.translate("Si el rack cierra el paso, muévelo con clic derecho sobre él.")
+			break
+	session.hud.show_toast(text, false)
 
 
 func _on_arrived() -> void:
@@ -214,6 +263,10 @@ func leave() -> void:
 	if mode == Mode.TRANSITION:
 		mode = Mode.OVERVIEW
 	_update_tool_text()
+	if _pending_move >= 0 and mode == Mode.OVERVIEW:
+		var device_id := _pending_move
+		_pending_move = -1
+		start_move(device_id)
 
 
 # ---------------------------------------------------------------- close-up --
@@ -245,6 +298,10 @@ func refresh_panel() -> void:
 		if _mount_device >= 0:
 			hud.side_label(TranslationServer.translate("Haz clic en una unidad libre del rack (Esc para cancelar)."), UiStyle.HIGHLIGHT)
 		hud.side_button(TranslationServer.translate("Ver cara frontal (R)") if _rack_rear else TranslationServer.translate("Ver cara trasera (R)"), _toggle_rack_side)
+		if world.has_cables_inside(d):
+			hud.side_button(TranslationServer.translate("Desconectar todos los cables"), _disconnect_all.bind(d.id))
+		hud.side_row([[TranslationServer.translate("Mover rack"), _move_from_closeup.bind(d.id)],
+			[TranslationServer.translate("Recoger rack"), _pick_up.bind(d.id)]])
 	else:
 		hud.side_clear(d.display_name())
 		hud.side_label(TranslationServer.translate("Estado: %s") % _state_text(d), UiStyle.OK if d.is_running() else UiStyle.BONE)
@@ -302,6 +359,38 @@ func _unmount(device_id: int) -> void:
 	var r := session.world.unmount_device(device_id)
 	session.hud.show_toast(r.message, r.ok)
 	refresh_panel()
+
+
+## Unplugs every cable of a rack and of the devices mounted in it (each one is a SimWorld command).
+func _disconnect_all(rack_id: int) -> void:
+	var world := session.world
+	var rack := world.get_device(rack_id)
+	var inside: Array[SimDevice] = [rack]
+	inside.append_array(world.mounted_in(rack))
+	var count := 0
+	for d: SimDevice in inside:
+		for ref: String in d.port_refs():
+			if world.port_cable.has(ref) and world.disconnect_port(ref).ok:
+				count += 1
+	selected_cable = -1
+	session.hud.show_toast(TranslationServer.translate("%d cables desconectados y devueltos al inventario.") % count)
+	_update_tool_text()
+	refresh_panel()
+
+
+func _move_from_closeup(rack_id: int) -> void:
+	if session.world.has_cables_inside(session.world.get_device(rack_id)):
+		session.hud.show_toast(TranslationServer.translate("Desconecta antes los cables del rack para moverlo."), false)
+		return
+	_pending_move = rack_id
+	leave()
+
+
+func _pick_up(rack_id: int) -> void:
+	var r := session.world.pick_up_device(rack_id)
+	session.hud.show_toast(r.message, r.ok)
+	if r.ok:
+		leave()
 
 
 func _toggle_rack_side() -> void:
@@ -423,17 +512,51 @@ func _on_inventory_item(device_id: int) -> void:
 	session.hud.show_toast(d.definition.description)
 
 
-func _start_placement(d: SimDevice) -> void:
+func _start_placement(d: SimDevice, moving: bool = false) -> void:
 	_cancel_placement()
 	_ghost_device = d.id
-	_ghost_yaw = 0.0
+	_ghost_yaw = d.yaw_degrees if moving else 0.0
+	_ghost_pos = d.position if moving else Vector3.ZERO
 	_ghost = ModelUtil.instance_model(d.definition.model_path)
 	for mesh: MeshInstance3D in ModelUtil.find_meshes_with_prefix(_ghost, ""):
 		mesh.transparency = 0.45
+	_add_service_zones(d.definition)
 	session.add_child(_ghost)
+	if moving:
+		# The real rack (and what is mounted in it) disappears while its ghost is moved.
+		var ids: Array[int] = [d.id]
+		for m: SimDevice in session.world.mounted_in(d):
+			ids.append(m.id)
+		for id: int in ids:
+			var view := session.device_views.get(id) as Node3D
+			if view != null:
+				view.visible = false
+				_hidden_views.append(view)
 	mode = Mode.PLACEMENT
 	session.hud.set_hint(TranslationServer.translate(HINT_PLACEMENT))
+	_update_ghost()
 	_move_ghost(session.get_viewport().get_mouse_position())
+
+
+## Floor marks of the space a rack needs in front (bright) and behind (faint).
+func _add_service_zones(def: HardwareDefinition) -> void:
+	_zone_meshes.clear()
+	var rack := def.get_spec(RackSpec) as RackSpec
+	if rack == null or rack.service_clearance_m <= 0.0:
+		return
+	for side: float in [1.0, -1.0]:
+		var zone := MeshInstance3D.new()
+		var plane := PlaneMesh.new()
+		plane.size = Vector2(def.footprint_m.x, rack.service_clearance_m)
+		zone.mesh = plane
+		zone.position = Vector3(0.0, 0.012, side * (def.footprint_m.y + rack.service_clearance_m) / 2.0)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		zone.material_override = mat
+		zone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_ghost.add_child(zone)
+		_zone_meshes.append(zone)
 
 
 func _move_ghost(screen_pos: Vector2) -> void:
@@ -451,7 +574,18 @@ func _update_ghost() -> void:
 	_ghost.position = _ghost_pos
 	_ghost.rotation_degrees.y = _ghost_yaw
 	var problem := _placement_problem()
-	session.hud.set_tool_text(TranslationServer.translate("✓ Cabe aquí: clic para colocar") if problem == "" else "✗ " + problem)
+	var text: String = TranslationServer.translate("✓ Cabe aquí: clic para colocar") if problem == "" else "✗ " + problem
+	if not _zone_meshes.is_empty():
+		var color: Color = UiStyle.OK if problem == "" else UiStyle.BAD
+		for i: int in _zone_meshes.size():
+			(_zone_meshes[i].material_override as StandardMaterial3D).albedo_color = Color(color, ZONE_FRONT_ALPHA if i == 0 else ZONE_REAR_ALPHA)
+		text += TranslationServer.translate(" · La zona clara del suelo marca el frente del rack.")
+		if problem == "":
+			var def := session.world.get_device(_ghost_device).definition
+			var power := session.world.rack_power_estimate(def, _ghost_pos, _ghost_yaw)
+			if not power.is_empty() and power["needed"] > power["longest"]:
+				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %.1f m de cable de corriente y el más largo mide %.0f m.") % [power["needed"], power["longest"]]
+	session.hud.set_tool_text(text)
 
 
 ## Simulation rules plus one presentation rule: never drop an object on the character.
@@ -482,6 +616,11 @@ func _cancel_placement() -> void:
 	if _ghost != null:
 		_ghost.queue_free()
 		_ghost = null
+	_zone_meshes.clear()
+	for view: Node3D in _hidden_views:
+		if is_instance_valid(view):
+			view.visible = true
+	_hidden_views.clear()
 	_ghost_device = -1
 	if mode == Mode.PLACEMENT:
 		mode = Mode.OVERVIEW

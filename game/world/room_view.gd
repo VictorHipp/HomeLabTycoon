@@ -65,22 +65,34 @@ func build() -> void:
 		if spec[3]:
 			ModelUtil.add_box_body(piece, ModelUtil.local_aabb(piece), Layers.FURNITURE)
 
-	for side: Array in [["back", Vector3(0, 0, -1)], ["front", Vector3(0, 0, 1)],
-			["left", Vector3(-1, 0, 0)], ["right", Vector3(1, 0, 0)]]:
-		var full := room.find_child("WALL_%s" % side[0], true, false) as Node3D
-		var cut := room.find_child("WALL_%s_cut" % side[0], true, false) as Node3D
-		if full != null and cut != null:
-			_walls.append({"full": full, "cut": cut, "normal": side[1]})
+	_walls = find_walls(room)
 	request_bake()
 
 
 ## Show the low version of the walls between the camera and the room (decision 15).
 func update_cutaway(camera_position: Vector3) -> void:
+	apply_cutaway(_walls, camera_position)
+
+
+## The full and cut variants of each wall of a room model (WALL_<side> / WALL_<side>_cut).
+static func find_walls(room: Node) -> Array[Dictionary]:
+	var walls: Array[Dictionary] = []
+	for side: Array in [["back", Vector3(0, 0, -1)], ["front", Vector3(0, 0, 1)],
+			["left", Vector3(-1, 0, 0)], ["right", Vector3(1, 0, 0)]]:
+		var full := room.find_child("WALL_%s" % side[0], true, false) as Node3D
+		var cut := room.find_child("WALL_%s_cut" % side[0], true, false) as Node3D
+		if full != null and cut != null:
+			walls.append({"full": full, "cut": cut, "normal": side[1]})
+	return walls
+
+
+## Walls whose outer side faces the camera show their cut variant; the others, the full one.
+static func apply_cutaway(walls: Array[Dictionary], camera_position: Vector3) -> void:
 	var dir := Vector3(camera_position.x, 0.0, camera_position.z)
 	if dir.length() < 0.01:
 		return
 	dir = dir.normalized()
-	for wall: Dictionary in _walls:
+	for wall: Dictionary in walls:
 		var cut_mode := dir.dot(wall["normal"]) > CUT_THRESHOLD
 		(wall["full"] as Node3D).visible = not cut_mode
 		(wall["cut"] as Node3D).visible = cut_mode

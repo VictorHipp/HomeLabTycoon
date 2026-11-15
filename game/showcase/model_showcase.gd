@@ -26,10 +26,12 @@ const SETTLE_FRAMES := 30
 var _view_index: int = 0
 var _orbit_yaw: float = 0.0
 var _orbit_zoom: float = 1.0
+var _walls: Array[Dictionary] = []
 
 
 func _ready() -> void:
 	get_viewport().msaa_3d = Viewport.MSAA_4X
+	_walls = RoomView.find_walls(self) # same wall cutaway as the game
 	_apply_view(0)
 	var capture_dir := _capture_dir()
 	if capture_dir != "":
@@ -73,6 +75,7 @@ func _apply_view(index: int) -> void:
 	_camera.fov = spec[2]
 	_camera.look_at_from_position(pos, target)
 	_mannequin.visible = spec[3]
+	RoomView.apply_cutaway(_walls, pos)
 
 
 func _capture_dir() -> String:
