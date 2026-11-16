@@ -43,7 +43,7 @@ Simulador 3D de construcción y administración de infraestructura informática.
   - `sim/`: simulación pura (mundo, catálogo y fichas de tienda, red, cables, terminal, misiones, economía y guardado);
   - `data/`: catálogo, fichas de la tienda, reglas de economía, misión y manual;
   - `game/`: presentación;
-  - `tests/`: 84 pruebas sin ventana, *smoke test* y comprobación de modelos;
+  - `tests/`: 85 pruebas sin ventana, *smoke test* y comprobación de modelos;
   - `tools/`: scripts.
 
   Detalle en `docs/ARCHITECTURE.md` y en ROADMAP §1.

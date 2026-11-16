@@ -170,9 +170,13 @@ El usuario pidió poder colocar a su gusto la cama, el escritorio con el PC, el 
   - para usar un equipo, el personaje busca un sitio alcanzable a su alrededor, empezando por el lado de sus tomas.
 - **Guardado v3:** guarda la distribución. Las partidas v1 y v2 cargan con la distribución inicial.
 - **Comprobado:**
-  - `tests/integration/test_furniture.gd`;
-  - escenario `furniture` de `tools\walkthrough.ps1`, que mueve las cinco cosas con clics reales, con un rechazo de la cama y otro del router. Después usa el PC (ping al router), abre de cerca el router en el escritorio y guarda y carga. Comprueba también que nada atraviesa nada y que ningún cable atraviesa otro;
-  - un barrido en la simulación: con los cables de casa, el escritorio cabe en 621 combinaciones de sitio y giro (rejilla de 10 cm × 4 giros) y la mesilla en 1019. Lo que más limita es el tamaño de la habitación y de la cama.
+  - `tests/integration/test_furniture.gd`, incluida una partida con la misión terminada (rack, zonas de trabajo y cables a la regleta que viaja con el escritorio);
+  - escenario `furniture` de `tools\walkthrough.ps1`, que mueve las cinco cosas con clics reales, con un rechazo de la cama y otro del router. Después usa el PC (ping al router), abre de cerca el router en el escritorio, desenchufa su cable de corriente con clic derecho, lo vuelve a tender hasta la regleta y guarda y carga. Comprueba también que nada atraviesa nada y que ningún cable atraviesa otro;
+  - un barrido en la simulación (script temporal, no está en el repositorio): con los cables de casa, el escritorio cabe en 621 combinaciones de sitio y giro (rejilla de 10 cm × 4 giros), la mesilla en 1019 y la cama solo en 66. Lo que más limita es el tamaño de la habitación y de la cama.
+- **Límites:**
+  - cambiar dos piezas grandes de sitio exige pasos intermedios, porque no hay almacén temporal;
+  - cuando dos cables salen de la misma cara en direcciones distintas y uno podría atravesar al otro al bajar, el más alto baja un carril y medio más afuera. Eso no comprueba el hueco que hay detrás del equipo: solo está verificado en la distribución inicial y en la del recorrido;
+  - no se ha probado la vista cercana de la torre del PC con su trasera contra la pared.
 
 ## 9. UX del cableado (Hito 4) `[PROPUESTA]`
 

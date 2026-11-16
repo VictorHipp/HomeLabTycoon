@@ -242,7 +242,36 @@ func _furniture_steps() -> void:
 	if not await _open(&"device", router.id):
 		return
 	await _shot("router_nuevo_sitio")
+	_note("R7b. Desenchufar un cable de casa (clic derecho en la toma del router) y volver a tenderlo hasta la regleta")
+	var psu := PortRef.make(router.id, &"psu", 0)
+	var cord_id: int = s.world.port_cable.get(psu, -1)
+	await _click_port(psu, MOUSE_BUTTON_RIGHT)
+	await _frames(10)
+	if s.world.port_cable.has(psu) or cord_id < 0 or s.world.get_device(cord_id).location != &"inventory":
+		_fail("el clic derecho en la toma del router no devolvió su cable al inventario")
+		return
+	var cord_label := s.world.get_device(cord_id).definition.model
+	await _wait(func() -> bool: return _find_button(s.hud._inventory_row, cord_label) != null, 3.0) # HUD refresh
+	if not await _choose_cable(s.world.get_device(cord_id).definition.id):
+		return
+	await _click_port(psu)
 	await _leave()
+	var strip := _house_device(&"power_strip_4")
+	if not await _open(&"device", strip.id):
+		return
+	var outlet := ""
+	for i: int in 4:
+		if not s.world.port_cable.has(PortRef.make(strip.id, &"outlet", i)):
+			outlet = PortRef.make(strip.id, &"outlet", i)
+			break
+	await _click_port(outlet)
+	await _leave()
+	if not await _wait(func() -> bool: return s.world.is_powered(router), 5.0):
+		_fail("tras volver a tender el cable, el router no tiene corriente («%s»)" % s.hud._toast.text)
+		return
+	await _frames(30)
+	await _check_cables_clear("tras volver a tender el cable del router")
+	_check_cables_apart("tras volver a tender el cable del router")
 	await _save_load_layout()
 
 

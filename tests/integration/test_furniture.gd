@@ -106,6 +106,55 @@ func test_router_goes_from_one_top_to_another() -> void:
 	assert_almost(router.position.z, -1.25, 0.0001, "the router stayed on the desk")
 
 
+## After the mission (rack with its working zones, its cables to the strip that goes with the
+## desk): a piece may not cover a working zone, and moving the desk either keeps every cable
+## valid or is refused naming the cable, with nothing changed.
+func test_rearranging_after_the_mission() -> void:
+	var items: Array[StringName] = [&"rack_12u_open", &"switch_16p_1u", &"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_5m"]
+	assert_true(world.purchase(items).ok, "purchase")
+	world.skip_to_next_event()
+	for package_id: int in world.packages.keys():
+		world.open_package(package_id)
+	var rack := _inventory(&"rack_12u_open")
+	var sw := _inventory(&"switch_16p_1u")
+	var srv := _inventory(&"server_1u_entry")
+	assert_true(world.place_device(rack.id, Vector3(0.2, 0.0, 0.6), 0.0).ok, "rack")
+	assert_true(world.mount_device(sw.id, rack.id, 9).ok and world.mount_device(srv.id, rack.id, 5).ok, "mount")
+	var strip := _device(&"power_strip_4")
+	var router := _device(&"router_home")
+	_plug(&"power_cord_3m", PortRef.make(sw.id, &"psu", 0), PortRef.make(strip.id, &"outlet", 2))
+	_plug(&"power_cord_3m", PortRef.make(srv.id, &"psu", 0), PortRef.make(strip.id, &"outlet", 3))
+	_plug(&"cable_cat6_1m", PortRef.make(srv.id, &"lan", 0), PortRef.make(sw.id, &"lan", 0))
+	_plug(&"cable_cat6_5m", PortRef.make(sw.id, &"lan", 1), PortRef.make(router.id, &"lan", 1))
+	assert_contains(world.furniture_problem(&"cabinet", Vector3(0.2, 0.0, 0.05), 0.0), "espacio de trabajo", "behind the rack")
+	assert_contains(world.furniture_problem(&"bed", Vector3(0.2, 0.0, 0.6), 90.0), "choca con", "on the rack")
+	var desk := world.get_furniture(&"desk")
+	for spot: Array in [[Vector3(0.45, 0.0, -1.17), 0.0], [Vector3(0.55, 0.0, -1.0), 0.0], [Vector3(-1.35, 0.0, -0.8), 90.0]]:
+		var before := [desk.position, desk.yaw_degrees, strip.position, world.obstacles.duplicate()]
+		var r := world.move_furniture(&"desk", spot[0], spot[1])
+		if r.ok:
+			for cable_id: int in world.cable_ends:
+				var route := world.cable_route(cable_id)
+				var spec := world.get_device(cable_id).definition.get_spec(CableSpec) as CableSpec
+				assert_true(route["ok"] and route["length"] <= spec.length_m, "desk at %s: cable %d still fits" % [spot[0], cable_id])
+		else:
+			assert_true(r.message.contains("cable") or r.message.contains("No cabe"), "refused with a reason: %s" % r.message)
+			assert_eq([desk.position, desk.yaw_degrees, strip.position, world.obstacles], before, "refused: nothing moved")
+
+
+func _inventory(item_id: StringName) -> SimDevice:
+	for d: SimDevice in world.inventory():
+		if d.definition.id == item_id:
+			return d
+	return null
+
+
+func _plug(item_id: StringName, a: String, b: String) -> void:
+	var cable := _inventory(item_id)
+	assert_true(cable != null, "%s in inventory" % item_id)
+	assert_true(world.connect_cable(cable.id, a).ok and world.connect_cable(cable.id, b).ok, "%s %s-%s" % [item_id, a, b])
+
+
 func test_save_keeps_the_layout() -> void:
 	assert_true(world.move_furniture(&"rug", Vector3(0.6, 0.0, 0.5), 90.0).ok, "rug")
 	assert_true(world.move_furniture(&"cabinet", Vector3(1.45, 0.0, -0.75), 0.0).ok, "cabinet")
