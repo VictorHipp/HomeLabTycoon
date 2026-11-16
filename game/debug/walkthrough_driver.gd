@@ -24,7 +24,15 @@ extends Node
 ## Every scenario must end with the mission completed.
 
 const STEP_TIMEOUT := 25.0
-const SCENARIOS: Array[String] = ["basic", "wall", "far", "blocking", "manual", "furniture"]
+const SCENARIOS: Array[String] = ["basic", "wall", "far", "blocking", "manual", "furniture", "menu"]
+## menu scenario: [slot, presses (negative = ◀), option it must end on]. From the default look to
+## a girl with long red hair, no beard, no glasses, a terracotta hoodie, beige trousers and light
+## trainers.
+const LOOK_STEPS := [
+	["body", 1, "f"], ["skin", 1, "morena"], ["hair", 1, "long"], ["hair_color", 3, "pelirrojo"],
+	["beard", -1, "none"], ["glasses", 1, "no"], ["top", 1, "hoodie"], ["top_color", 1, "terracota"],
+	["pants_color", 2, "beige"], ["shoes_color", 1, "hueso"],
+]
 const MANUAL_DIR := "res://assets/manual"
 const MANUAL_SIZE := Vector2i(1280, 720)
 const MARK := Color("#3CC8D8")
@@ -51,12 +59,15 @@ const ROUTER_ON_DESK_TAKEN := Vector3(-1.5, 0.0, -0.66)
 const SHOPPING: Array[StringName] = [&"rack_12u_open", &"switch_16p_1u", &"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_5m"]
 
 signal session_attached
+signal title_attached
 
 const SAVE_SLOT := "user://saves/walkthrough.json" ## Never the player's save file.
 
 static var _instance: WalkthroughDriver = null
 
 var s: GameSession
+var title: TitleScreen = null ## The title screen, in the scenarios that start there.
+var _menu_look: Dictionary = {} ## menu scenario: the look chosen in the creator.
 var out_dir: String
 var scenario: String = "basic"
 var _shots: int = 0
@@ -75,6 +86,11 @@ static func _arg(prefix: String) -> String:
 	return ""
 
 
+static func requested_scenario() -> String:
+	var requested := _arg("--scenario=")
+	return requested if requested != "" else "basic"
+
+
 ## Called by every GameSession that starts with --walkthrough. The driver lives under the tree
 ## root, so it survives loading a game (which rebuilds the scene) and follows the new session.
 static func attach(session: GameSession) -> void:
@@ -82,10 +98,24 @@ static func attach(session: GameSession) -> void:
 		_instance.s = session
 		_instance.session_attached.emit()
 		return
+	_create(session)
+	_instance.s = session
+
+
+## Called by the title screen (GameLauncher) in the scenarios that start there.
+static func attach_title(title_screen: TitleScreen) -> void:
+	if _instance != null:
+		_instance.title = title_screen
+		_instance.title_attached.emit()
+		return
+	_create(title_screen)
+	_instance.title = title_screen
+
+
+static func _create(anchor: Node) -> void:
 	_instance = WalkthroughDriver.new()
 	_instance.name = "WalkthroughDriver"
 	_instance.process_mode = Node.PROCESS_MODE_ALWAYS # keeps working while a menu pauses the game
-	_instance.s = session
 	_instance.out_dir = requested_dir()
 	var requested := _arg("--scenario=")
 	if requested != "":
@@ -95,7 +125,7 @@ static func attach(session: GameSession) -> void:
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
 	DirAccess.make_dir_recursive_absolute(_instance.out_dir)
-	session.get_tree().root.add_child.call_deferred(_instance)
+	anchor.get_tree().root.add_child.call_deferred(_instance)
 	_instance._run.call_deferred()
 
 
@@ -105,6 +135,9 @@ func _run() -> void:
 		_finish()
 		return
 	_note("Escenario: " + scenario)
+	if GameLauncher.TITLE_SCENARIOS.has(scenario) and not await _title_and_creator():
+		_finish()
+		return
 	await _frames(90)
 	await _shot("inicio")
 	await _manual("01_vista_general", [_hud_rect(s.hud._credits), _hud_rect(s.hud._mission_title), _hud_rect(s.hud._inventory_row)])
@@ -113,6 +146,9 @@ func _run() -> void:
 
 
 func _steps() -> void:
+	if scenario == "menu":
+		await _menu_steps()
+		return
 	if scenario == "furniture":
 		await _furniture_steps()
 		return
@@ -160,6 +196,127 @@ func _steps() -> void:
 			await _chair_blocked()
 		"manual":
 			await _manual_epilogue()
+
+
+## Title screen with real clicks: "Cargar partida" unavailable (no save yet) with its reason,
+## "Nueva partida", the character creator (menu: each row's ◀ ▶ changes the preview), and
+## "Empezar partida" until the game is running.
+func _title_and_creator() -> bool:
+	_note("T1. Pantalla de título")
+	await _frames(40)
+	if title == null:
+		_fail("no hay pantalla de título")
+		return false
+	await _shot("titulo")
+	await _manual("00_titulo", [title.load_button.get_global_rect(), title.load_note.get_global_rect()])
+	if not title.load_button.disabled or not title.load_note.text.contains("No hay ninguna partida"):
+		_fail("sin partida guardada, «Cargar partida» debería estar desactivado y decir por qué («%s»)" % title.load_note.text)
+	if not await _press(_find_button(title, "Nueva partida"), "Nueva partida"):
+		return false
+	await _frames(30)
+	var creator := title.creator
+	if creator == null:
+		_fail("«Nueva partida» no abrió el creador de personaje")
+		return false
+	if scenario == "menu":
+		_note("T2. Creador: cambiar cada opción con sus botones")
+		await _shot("creador_inicial")
+		for step: Array in LOOK_STEPS:
+			var slot := String(step[0])
+			var presses := int(step[1])
+			for _i: int in absi(presses):
+				var button := creator.find_child(("Next_" if presses > 0 else "Prev_") + slot, true, false) as Button
+				if not await _press(button, ("▶ " if presses > 0 else "◀ ") + slot):
+					return false
+			if creator.look.choice(slot) != String(step[2]):
+				_fail("«%s» quedó en «%s», no en «%s»" % [slot, creator.look.choice(slot), step[2]])
+		_check_look(creator.preview_model, creator.look, "vista previa")
+		_menu_look = creator.look.to_dict()
+		await _frames(60)
+	await _shot("creador")
+	await _manual("00b_personaje", [(creator.find_child("Start", true, false) as Control).get_global_rect()])
+	if not await _press(creator.find_child("Start", true, false) as Button, "Empezar partida"):
+		return false
+	if not await _wait(func() -> bool: return s != null and is_instance_valid(s) and s.is_inside_tree() and s.hud != null, 15.0):
+		_fail("«Empezar partida» no arrancó la partida")
+		return false
+	return true
+
+
+## The pieces and colours of `look` are the ones shown on `model`.
+func _check_look(model: Node3D, look: CharacterAppearance, label: String) -> void:
+	var seen := {}
+	for mesh: MeshInstance3D in ModelUtil.find_meshes_with_prefix(model, ""):
+		seen[String(mesh.name)] = mesh
+		if mesh.visible != look.shows(String(mesh.name)):
+			_fail("%s: la pieza %s %s" % [label, mesh.name, "no se ve y debería" if not mesh.visible else "se ve y no debería"])
+	var body := look.choice("body")
+	var top := look.choice("top")
+	var jacket := "torso_%s_%s_%s" % [body, top, "jacket" if top == "overshirt" else "body"]
+	var mesh := seen.get(jacket) as MeshInstance3D
+	if mesh == null or not mesh.visible:
+		_fail("%s: no se ve %s" % [label, jacket])
+		return
+	var want: Color = look.option_color("top_color")
+	var mat := mesh.get_surface_override_material(0) as StandardMaterial3D
+	if mat == null or not mat.albedo_color.is_equal_approx(want):
+		_fail("%s: la prenda no tiene el color elegido (%s)" % [label, mat.albedo_color if mat != null else "sin material"])
+
+
+## menu: the chosen look in the game, walking and sitting; then save, back to the title screen,
+## and load from there: the same game and the same look.
+func _menu_steps() -> void:
+	_note("M1. En la partida, el personaje tiene el aspecto elegido")
+	var look := CharacterAppearance.from_dict(_menu_look)
+	if s.character.appearance.to_dict() != look.to_dict():
+		_fail("el aspecto en la partida no es el elegido: %s" % s.character.appearance.to_dict())
+	_check_look(s.character.model, look, "en la partida")
+	await _click_point(Vector3(-0.6, 0.0, 0.4))
+	await _wait(func() -> bool: return not s.character.moving)
+	await _shot("personaje_en_partida")
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	if not await _wait_mode(InteractionManager.Mode.SCREEN, 15.0):
+		_fail("no pude sentarme al PC")
+		return
+	_key(KEY_ESCAPE)
+	await _wait_mode(InteractionManager.Mode.OVERVIEW)
+	await _wait(func() -> bool: return not s.character.busy, 5.0)
+	_check_standing("tras sentarse con el aspecto elegido")
+	_note("M2. Guardar, volver al menú principal (avisa antes) y cargar desde el título")
+	_key(KEY_ESCAPE)
+	await _frames(5)
+	if not await _press(_find_button(s.menu, "Guardar partida"), "Guardar partida"):
+		return
+	var saved_credits := s.world.credits
+	var saved_minutes := s.world.time_minutes
+	if not await _press(_find_button(s.menu, "Volver al menú principal"), "Volver al menú principal (aviso)"):
+		return
+	if not s.menu._status.text.contains("se perderá"):
+		_fail("volver al menú principal no avisa de lo no guardado: «%s»" % s.menu._status.text)
+	var old_title_id := title.get_instance_id() if is_instance_valid(title) else 0 # an id: the old one is freed
+	if not await _press(_find_button(s.menu, "Volver al menú principal"), "Volver al menú principal"):
+		return
+	if not await _wait(func() -> bool: return is_instance_valid(title) and title.get_instance_id() != old_title_id and title.is_inside_tree(), 10.0):
+		_fail("no volvió a la pantalla de título")
+		return
+	await _frames(30)
+	if title.load_button.disabled or not title.load_note.text.contains("Partida guardada"):
+		_fail("el título no ofrece la partida guardada: «%s»" % title.load_note.text)
+	await _shot("titulo_con_partida")
+	var old_id := s.get_instance_id() if is_instance_valid(s) else 0
+	if not await _press(_find_button(title, "Cargar partida"), "Cargar partida"):
+		return
+	if not await _wait(func() -> bool: return is_instance_valid(s) and s.get_instance_id() != old_id and s.hud != null, 15.0):
+		_fail("la partida no se cargó desde el título")
+		return
+	await _frames(90)
+	# The clock runs again after loading (90 frames ≈ 1.5 game minutes).
+	if s.world.credits != saved_credits or absf(s.world.time_minutes - saved_minutes) > 3.0:
+		_fail("la partida cargada no es la guardada (%d cr, %.0f min)" % [s.world.credits, s.world.time_minutes])
+	if s.character.appearance.to_dict() != look.to_dict():
+		_fail("tras cargar, el aspecto cambió: %s" % s.character.appearance.to_dict())
+	_check_look(s.character.model, look, "tras cargar")
+	await _shot("cargada_desde_titulo")
 
 
 ## Rearranging the room (docs/INTERACTION_SYSTEM.md §8.2) with real input: right click on each
@@ -1382,11 +1539,14 @@ func _chair_blocked() -> void:
 
 
 func _rebake() -> void:
+	# A bake that started before the change does not count: wait for it, then bake again.
+	await _wait(func() -> bool: return not s.room.nav_region.is_baking(), 10.0)
+	await _frames(2)
 	var done := [false]
 	s.room.nav_region.bake_finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
 	s.room.request_bake()
 	await _wait(func() -> bool: return done[0], 10.0)
-	await _frames(3)
+	await _frames(5)
 
 
 ## manual: the last pictures (a cable that does not reach, the save menu).
@@ -1919,6 +2079,12 @@ static func _v(p: Vector3) -> String:
 	return "(%.2f, %.2f, %.2f)" % [p.x, p.y, p.z]
 
 
+func _write_log() -> void:
+	var file := FileAccess.open(out_dir.path_join("walkthrough_log.txt"), FileAccess.WRITE)
+	if file != null:
+		file.store_string("\n".join(_log) + "\n")
+
+
 func _note(text: String) -> void:
 	_log.append(text)
 	print("WALK " + text)
@@ -1930,13 +2096,17 @@ func _fail(text: String) -> void:
 
 
 func _finish() -> void:
+	if s == null or not is_instance_valid(s):
+		_note("La partida no llegó a empezar")
+		print("WALKTHROUGH %s FAILED (%d fallos)" % [scenario, _failures.size()])
+		_write_log()
+		get_tree().quit(1)
+		return
 	var tracker := s.world.mission
-	# The furniture scenario only rearranges the room (no mission).
-	var ok := _failures.is_empty() and (tracker.completed or scenario == "furniture")
+	# The furniture and menu scenarios do not play the mission.
+	var ok := _failures.is_empty() and (tracker.completed or scenario in ["furniture", "menu"])
 	_note("Misión completada: %s · estado %s" % [tracker.completed, str(tracker.status)])
 	_note("Créditos %d · XP %d · nivel %d" % [s.world.credits, s.world.xp, s.world.level()])
-	var file := FileAccess.open(out_dir.path_join("walkthrough_log.txt"), FileAccess.WRITE)
-	if file != null:
-		file.store_string("\n".join(_log) + "\n")
+	_write_log()
 	print("WALKTHROUGH %s %s (%d fallos)" % [scenario, "OK" if ok else "FAILED", _failures.size()])
 	get_tree().quit(0 if ok else 1)

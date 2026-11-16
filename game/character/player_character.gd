@@ -30,6 +30,7 @@ var animator: CharacterAnimator
 var moving: bool = false
 var seated: bool = false
 var busy: bool = false ## Sitting down or standing up.
+var appearance: CharacterAppearance = CharacterAppearance.default_look()
 
 var _shape: CollisionShape3D
 var _speed: float = 0.0
@@ -59,6 +60,14 @@ func _ready() -> void:
 	add_child(model)
 	animator = CharacterAnimator.new()
 	animator.setup(model)
+	appearance.apply(model)
+
+
+## Body, hair, beard, glasses, clothes and colours chosen in the character creator.
+func set_appearance(look: CharacterAppearance) -> void:
+	appearance = look
+	if model != null:
+		look.apply(model)
 
 
 ## Walk to `point`. Returns false (and emits `unreachable`) if it cannot get there.

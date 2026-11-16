@@ -7,7 +7,7 @@ Simulador 3D de construcción y administración de infraestructura informática.
 ## Estado actual
 
 - **Hito 0 (entorno) completado.**
-- **Prueba jugable de la primera misión: hecha** (2026-11-15; ver `docs/ROADMAP.md` §1). La escena principal es `game/main/main.tscn` → `GameSession` (`game/session/`). Tras cualquier cambio de presentación, ejecuta también `tools\walkthrough.ps1` (5 escenarios, solo con entrada sintética real): debe terminar en `WALKTHROUGH CHECK PASSED`.
+- **Prueba jugable de la primera misión: hecha** (2026-11-15; ver `docs/ROADMAP.md` §1). La escena principal es `game/main/main.tscn` → `GameLauncher` (título) → `GameSession` (`game/session/`). Tras cualquier cambio de presentación, ejecuta también `tools\walkthrough.ps1` (6 escenarios, solo con entrada sintética real): debe terminar en `WALKTHROUGH CHECK PASSED`.
 - **Segunda ronda de mejoras (2026-11-15):**
   - menú con Ajustes › Controles;
   - manual con capturas;
@@ -26,6 +26,10 @@ Simulador 3D de construcción y administración de infraestructura informática.
   - guardado v2.
 
   Si cambia un modelo de la tienda, regenera sus fotos con `tools\capture_shop_photos.ps1`.
+- **Menú de inicio y personaje (2026-11-16):**
+  - `game/main/main.tscn` es un lanzador (`GameLauncher`): muestra el título (nueva partida con el creador de personaje, cargar, salir) o entra directo en el juego si hay una partida pendiente, con el recorrido o con `-- --new-game`;
+  - el personaje se personaliza (cuerpo chico o chica, pelo, barba, gafas, prenda y colores) según `data/character/appearance_options.tres`;
+  - el aspecto se guarda en la sección `session` ([ADR 0014](docs/adr/0014-title-menu-and-character-look.md)).
 - **Reorganizar la habitación (2026-11-16):** la cama, el escritorio (con silla, PC y regleta), la mesilla, la alfombra y el router se mueven con clic derecho. Los muebles son estado de la simulación (`data/furniture/`, `SimWorld.furniture`), el guardado pasa a v3 y el manual tiene el capítulo 11 ([ADR 0013](docs/adr/0013-furniture-as-simulation-state.md), `docs/INTERACTION_SYSTEM.md` §8.2).
 - **Personaje facetado (2026-11-16):** el jugador usa `character_player`, de modelado facetado con tres tonos por color y las mismas articulaciones que el maniquí (`docs/ART_STYLE.md` §6.1, [ADR 0012](docs/adr/0012-faceted-player-character.md)).
 - **Hito 1 (habitación, cámara y movimiento):** sus tareas 1–7 están hechas dentro de la prueba jugable.
@@ -43,7 +47,7 @@ Simulador 3D de construcción y administración de infraestructura informática.
   - `sim/`: simulación pura (mundo, catálogo y fichas de tienda, red, cables, terminal, misiones, economía y guardado);
   - `data/`: catálogo, fichas de la tienda, reglas de economía, misión y manual;
   - `game/`: presentación;
-  - `tests/`: 85 pruebas sin ventana, *smoke test* y comprobación de modelos;
+  - `tests/`: 90 pruebas sin ventana, *smoke test* y comprobación de modelos;
   - `tools/`: scripts.
 
   Detalle en `docs/ARCHITECTURE.md` y en ROADMAP §1.
@@ -124,7 +128,7 @@ powershell -ExecutionPolicy Bypass -File tools\play.ps1
 # Recorrido automático de la misión (clics en el mundo y en botones reales, órdenes tecleadas,
 # arrastre de cámara) en 4 escenarios del rack y uno de reorganizar los muebles; capturas en
 # build\walkthrough\<escenario>\ (no versionado)
-powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1 [-Scenario basic|wall|far|blocking|furniture]
+powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1 [-Scenario basic|wall|far|blocking|furniture|menu]
 
 # Ver la muestra de modelos (ventana) / generar capturas en docs\images\showcase\
 powershell -ExecutionPolicy Bypass -File tools\view_showcase.ps1

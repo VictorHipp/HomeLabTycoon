@@ -36,6 +36,9 @@ var _click_marker_time: float = 0.0
 ## A loaded save waiting for the scene to be rebuilt (load = reload the scene, so no view or
 ## panel keeps state from the previous game).
 static var _pending_load: Dictionary = {}
+## A new game waiting to start (from the title screen): the look chosen in the creator.
+static var _pending_new: bool = false
+static var _pending_look: Dictionary = {}
 
 
 func _ready() -> void:
@@ -45,7 +48,12 @@ func _ready() -> void:
 	NavigationServer3D.map_set_cell_height(nav_map, 0.05)
 	get_viewport().msaa_3d = Viewport.MSAA_4X
 	var loading := _pending_load
+	var look_data: Dictionary = _pending_look
 	_pending_load = {}
+	_pending_new = false
+	_pending_look = {}
+	if not loading.is_empty():
+		look_data = (loading.get("session", {}) as Dictionary).get("appearance", {})
 	world = BedroomScenario.restore(loading["sim"]) if not loading.is_empty() else BedroomScenario.create()
 	pc_id = world.devices_of(&"computer")[0].id
 	_build_environment()
@@ -65,6 +73,7 @@ func _ready() -> void:
 	character.name = "Character"
 	add_child(character)
 	character.global_position = CHARACTER_START
+	character.set_appearance(CharacterAppearance.from_dict(look_data))
 	camera = Camera3D.new()
 	camera.fov = 42.0
 	add_child(camera)
@@ -118,10 +127,37 @@ func _ready() -> void:
 
 # --------------------------------------------------------------- save / load --
 
-## Presentation part of the save: where the character stands and how the camera looks.
+## Something waiting to start when the main scene is (re)loaded: a loaded save or a new game.
+static func has_pending_start() -> bool:
+	return not _pending_load.is_empty() or _pending_new
+
+
+## The next session is a new game with this look (GameLauncher, from the character creator).
+static func prepare_new_game(look: Dictionary) -> void:
+	_pending_load = {}
+	_pending_new = true
+	_pending_look = look.duplicate()
+
+
+## The next session loads this save document (title screen or in-game menu).
+static func prepare_load(document: Dictionary) -> void:
+	_pending_new = false
+	_pending_look = {}
+	_pending_load = document
+
+
+static func clear_pending() -> void:
+	_pending_load = {}
+	_pending_new = false
+	_pending_look = {}
+
+
+## Presentation part of the save: where the character stands, how the camera looks and what the
+## character looks like.
 func capture_presentation() -> Dictionary:
 	var p := character.save_position()
 	return {
+		"appearance": character.appearance.to_dict(),
 		"character": {"position": [p.x, p.y, p.z], "facing": character.model.rotation.y},
 		"camera": {"yaw": rig.target_yaw_deg, "pitch": rig.target_pitch_deg, "distance": rig.target_distance,
 			"focus": [rig.target_focus.x, rig.target_focus.y, rig.target_focus.z]},
@@ -163,7 +199,7 @@ func load_game() -> Dictionary:
 	var r := SaveService.read()
 	if not r["ok"]:
 		return r
-	_pending_load = r["document"]
+	prepare_load(r["document"])
 	get_tree().paused = false
 	get_tree().reload_current_scene.call_deferred()
 	return {"ok": true, "message": TranslationServer.translate("Cargando la partida…")}
@@ -449,39 +485,7 @@ func spawn_click_marker(point: Vector3, ok: bool = true) -> void:
 # ------------------------------------------------------------------- build --
 
 func _build_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.118, 0.141, 0.188)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.86, 0.88, 0.92)
-	env.ambient_light_energy = 0.55
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.ssao_enabled = true
-	env.ssao_radius = 0.8
-	env.ssao_intensity = 1.6
-	env.glow_enabled = true
-	env.glow_intensity = 0.7
-	env.glow_bloom = 0.05
-	env.glow_hdr_threshold = 1.2
-	var world_env := WorldEnvironment.new()
-	world_env.environment = env
-	add_child(world_env)
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-38, 160, 0)
-	sun.light_color = Color(1, 0.91, 0.78)
-	sun.light_energy = 2.2
-	sun.shadow_enabled = true
-	sun.shadow_normal_bias = 2.0
-	sun.shadow_blur = 1.5
-	sun.directional_shadow_max_distance = 12.0
-	add_child(sun)
-	var lamp := OmniLight3D.new()
-	lamp.position = Vector3(0.2, 2.3, -0.2)
-	lamp.light_color = Color(1, 0.85, 0.66)
-	lamp.light_energy = 1.1
-	lamp.omni_range = 5.5
-	lamp.shadow_enabled = true
-	add_child(lamp)
+	RoomLighting.add_to(self)
 
 
 func _build_pc_extras() -> void:

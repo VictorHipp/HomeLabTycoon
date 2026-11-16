@@ -1,6 +1,6 @@
 # ADR 0012 — Personaje del jugador facetado
 
-- **Estado:** **aceptada** (pedida por el usuario el 2026-11-16). Precisa §2 y §3 de `docs/ART_STYLE.md` solo para los personajes.
+- **Estado:** **aceptada** (pedida por el usuario el 2026-11-16). Desde el [ADR 0014](0014-title-menu-and-character-look.md), el aspecto lo elige el jugador; el de aquí es el aspecto por defecto. Precisa §2 y §3 de `docs/ART_STYLE.md` solo para los personajes.
 - **Fecha:** 2026-11-16
 
 ## Contexto

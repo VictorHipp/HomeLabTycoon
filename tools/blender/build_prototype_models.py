@@ -52,11 +52,18 @@ MATERIALS = {
     "cinta": {"color": "#9C7046", "rough": 0.6},              # extra: packing tape
     "piel": {"color": "#E2AE8A", "rough": 0.8},               # extra: mannequin skin
     "pelo": {"color": "#3B2A20", "rough": 0.9},               # extra: mannequin hair
-    "salvia_oscura": {"color": "#6E8C6A", "rough": 0.85},     # extra: jacket collar and cuffs
-    "vaquero": {"color": "#4A5770", "rough": 0.9},            # extra: jeans (muted, not cable blue)
-    "vaquero_claro": {"color": "#66748C", "rough": 0.9},      # extra: rolled-up jeans hem
     "cuero": {"color": "#6B4A32", "rough": 0.7},              # extra: belt
-    "castano": {"color": "#5E4331", "rough": 0.9},            # extra: character hair and beard
+    # Player character slots: the game recolours them with the look chosen by the player
+    # (data/character/appearance_options.tres); these are the default colours.
+    "c_skin": {"color": "#E2AE8A", "rough": 0.8},
+    "c_hair": {"color": "#5E4331", "rough": 0.9},
+    "c_top": {"color": "#8FAF8B", "rough": 0.85},
+    "c_top_trim": {"color": "#6E8C6A", "rough": 0.85},
+    "c_shirt": {"color": "#EFE6D8", "rough": 0.85},
+    "c_pants": {"color": "#4A5770", "rough": 0.9},
+    "c_pants_hem": {"color": "#66748C", "rough": 0.9},
+    "c_shoes": {"color": "#2E3440", "rough": 0.65},
+    "c_sole": {"color": "#EFE6D8", "rough": 0.85},
     "puerto": {"color": "#101318", "rough": 0.9},             # socket interiors
     "cable_cobre": {"color": "#3B82C4", "rough": 0.6},
     "cristal": {"color": "#BFE3F2", "rough": 0.1, "alpha": 0.35},
@@ -790,25 +797,62 @@ def patch(name, rings, x0, x1, z0, z1, depth, material, lift=0.0, steps=4):
     return hull(name, pts, material, tones=False)
 
 
-# Vertical cross-sections (z, cx, cy, rx, ry[, ex]) of the character, in metres.
-JACKET = [(0.83, 0, 0.000, 0.188, 0.125, 2.4), (0.95, 0, 0.000, 0.182, 0.122, 2.4),
-          (1.10, 0, -0.004, 0.200, 0.132, 2.4), (1.26, 0, -0.008, 0.215, 0.138, 2.4),
-          (1.36, 0, 0.000, 0.220, 0.125, 2.4), (1.395, 0, 0.004, 0.190, 0.112, 2.4),
-          (1.425, 0, 0.008, 0.140, 0.095, 2.4)]
-JACKET_OPEN = (0.17, 0.17, 0.19, 0.22, 0.28, 0.40, 0.55)   # half opening at the front (rad)
-SHIRT = [(0.955, 0, 0.000, 0.158, 0.100, 2.4), (1.00, 0, 0.000, 0.158, 0.100, 2.4),
-         (1.15, 0, -0.004, 0.175, 0.108, 2.4), (1.26, 0, -0.008, 0.188, 0.112, 2.4),
-         (1.36, 0, 0.000, 0.188, 0.100, 2.4), (1.425, 0, 0.008, 0.115, 0.075, 2.4),
-         (1.47, 0, 0.010, 0.055, 0.050, 2.2)]
-PELVIS = [(0.73, 0, 0.005, 0.095, 0.065, 2.2), (0.785, 0, 0.000, 0.158, 0.098, 2.4),
-          (0.88, 0, 0.000, 0.160, 0.100, 2.4), (0.97, 0, 0.000, 0.152, 0.096, 2.4)]
-BELT = [(0.925, 0, 0.000, 0.159, 0.104, 2.4), (0.965, 0, 0.000, 0.157, 0.103, 2.4)]
+# Vertical cross-sections (z, cx, cy, rx, ry[, ex]) of the character, in metres, per body:
+# "m" (chico) and "f" (chica). Same joints and limbs; the torso, waist and hips change.
+BODY = {
+    "m": {
+        "jacket": [(0.83, 0, 0.000, 0.188, 0.125, 2.4), (0.95, 0, 0.000, 0.182, 0.122, 2.4),
+                   (1.10, 0, -0.004, 0.200, 0.132, 2.4), (1.26, 0, -0.008, 0.215, 0.138, 2.4),
+                   (1.36, 0, 0.000, 0.220, 0.125, 2.4), (1.395, 0, 0.004, 0.190, 0.112, 2.4),
+                   (1.425, 0, 0.008, 0.140, 0.095, 2.4)],
+        "open": (0.17, 0.17, 0.19, 0.22, 0.28, 0.40, 0.55),   # half opening at the front (rad)
+        "shirt": [(0.955, 0, 0.000, 0.158, 0.100, 2.4), (1.00, 0, 0.000, 0.158, 0.100, 2.4),
+                  (1.15, 0, -0.004, 0.175, 0.108, 2.4), (1.26, 0, -0.008, 0.188, 0.112, 2.4),
+                  (1.36, 0, 0.000, 0.188, 0.100, 2.4), (1.425, 0, 0.008, 0.115, 0.075, 2.4),
+                  (1.47, 0, 0.010, 0.055, 0.050, 2.2)],
+        "tee": [(0.955, 0, 0.000, 0.165, 0.106, 2.4), (1.10, 0, -0.004, 0.188, 0.124, 2.4),
+                (1.26, 0, -0.008, 0.203, 0.130, 2.4), (1.36, 0, 0.000, 0.208, 0.117, 2.4),
+                (1.395, 0, 0.004, 0.180, 0.105, 2.4), (1.425, 0, 0.008, 0.132, 0.088, 2.4),
+                (1.47, 0, 0.010, 0.058, 0.052, 2.2)],
+        "pelvis": [(0.73, 0, 0.005, 0.095, 0.065, 2.2), (0.785, 0, 0.000, 0.158, 0.098, 2.4),
+                   (0.88, 0, 0.000, 0.160, 0.100, 2.4), (0.97, 0, 0.000, 0.152, 0.096, 2.4)],
+        "belt": [(0.925, 0, 0.000, 0.159, 0.104, 2.4), (0.965, 0, 0.000, 0.157, 0.103, 2.4)],
+    },
+    "f": {
+        "jacket": [(0.83, 0, 0.000, 0.196, 0.127, 2.4), (0.95, 0, 0.000, 0.184, 0.117, 2.4),
+                   (1.10, 0, -0.004, 0.175, 0.122, 2.4), (1.24, 0, -0.014, 0.196, 0.140, 2.4),
+                   (1.36, 0, 0.000, 0.200, 0.118, 2.4), (1.395, 0, 0.004, 0.172, 0.106, 2.4),
+                   (1.425, 0, 0.008, 0.130, 0.090, 2.4)],
+        "open": (0.17, 0.17, 0.19, 0.24, 0.28, 0.40, 0.55),
+        "shirt": [(0.955, 0, 0.000, 0.150, 0.094, 2.4), (1.00, 0, 0.000, 0.148, 0.094, 2.4),
+                  (1.10, 0, -0.004, 0.155, 0.102, 2.4), (1.24, 0, -0.014, 0.175, 0.120, 2.4),
+                  (1.36, 0, 0.000, 0.178, 0.098, 2.4), (1.425, 0, 0.008, 0.108, 0.070, 2.4),
+                  (1.47, 0, 0.010, 0.052, 0.048, 2.2)],
+        "tee": [(0.955, 0, 0.000, 0.158, 0.100, 2.4), (1.10, 0, -0.004, 0.165, 0.114, 2.4),
+                (1.24, 0, -0.014, 0.186, 0.131, 2.4), (1.36, 0, 0.000, 0.190, 0.110, 2.4),
+                (1.395, 0, 0.004, 0.163, 0.099, 2.4), (1.425, 0, 0.008, 0.123, 0.084, 2.4),
+                (1.47, 0, 0.010, 0.055, 0.050, 2.2)],
+        "pelvis": [(0.73, 0, 0.005, 0.100, 0.068, 2.2), (0.785, 0, 0.000, 0.166, 0.102, 2.4),
+                   (0.88, 0, 0.000, 0.170, 0.104, 2.4), (0.97, 0, 0.000, 0.150, 0.094, 2.4)],
+        "belt": [(0.925, 0, 0.000, 0.163, 0.101, 2.4), (0.965, 0, 0.000, 0.155, 0.097, 2.4)],
+    },
+}
 HEAD = [(1.470, 0, -0.050, 0.035, 0.030), (1.490, 0, -0.035, 0.075, 0.075),
         (1.530, 0, -0.010, 0.105, 0.105), (1.590, 0, 0.000, 0.122, 0.122),
         (1.650, 0, 0.005, 0.124, 0.124), (1.710, 0, 0.012, 0.108, 0.112),
         (1.750, 0, 0.015, 0.068, 0.072), (1.765, 0, 0.015, 0.0, 0.0)]
 # Hairline height by angular distance from the front (rad): forehead, temples, over the ears, nape.
 HAIRLINE = ((0.0, 1.690), (0.7, 1.668), (1.25, 1.642), (1.75, 1.636), (2.2, 1.555), (math.pi, 1.500))
+# Carved locks lying on the hair: (angle from the front, height, length, sweep, width).
+# The fringe is swept to one side, the top backwards and the back downwards.
+_FRINGE, _TOP, _SIDE, _NAPE = (0.7, 0.2, 0.55), (0.3, 0.8, 0.45), (0.0, 0.8, -0.3), (0.0, 0.45, -1.0)
+LOCKS = [(-0.55, 1.700, 0.040, _FRINGE, 0.034), (-0.15, 1.712, 0.046, _FRINGE, 0.036),
+         (0.25, 1.708, 0.044, _FRINGE, 0.034), (0.62, 1.692, 0.036, (0.6, 0.4, 0.3), 0.030),
+         (-0.35, 1.748, 0.040, _TOP, 0.036), (0.30, 1.750, 0.040, _TOP, 0.036),
+         (-1.05, 1.690, 0.034, _SIDE, 0.030), (1.05, 1.690, 0.034, _SIDE, 0.030),
+         (-1.60, 1.668, 0.030, _SIDE, 0.028), (1.60, 1.668, 0.030, _SIDE, 0.028),
+         (math.pi - 0.7, 1.720, 0.036, _NAPE, 0.034), (math.pi + 0.7, 1.720, 0.036, _NAPE, 0.034),
+         (math.pi, 1.660, 0.034, _NAPE, 0.034)]
 
 
 def _hairline(d):
@@ -823,27 +867,23 @@ def _head_point(z, a, out):
     return Vector((cx + (rx + out) * math.cos(a), cy + (ry + out) * math.sin(a), z))
 
 
-def _build_hair():
-    rng = _rng("hair")
-    pts = [(0.0, 0.015, 1.786)]
+def _hair_cap(name, out_min, out_extra, top):
+    """Faceted mass over the scalp, `out_min`..`out_min + out_extra` above the head."""
+    rng = _rng(name)
+    pts = [(0.0, 0.015, top)]
     levels = [1.50 + 0.025 * i for i in range(11)]
     for k in range(20):
         a = -math.pi / 2 + 2 * math.pi * k / 20
         line = _hairline(abs(math.remainder(a + math.pi / 2, 2 * math.pi)))
         for z in [line] + [z for z in levels if z > line + 0.01]:
-            pts.append(tuple(_head_point(z, a, 0.014 + rng.uniform(0.0, 0.008))))
-    hull("hair", pts, "castano")
-    # Carved locks lying on the hair: (angle from the front, height, length, sweep, width).
-    # The fringe is swept to one side, the top backwards and the back downwards.
-    fringe, top, side, nape = (0.7, 0.2, 0.55), (0.3, 0.8, 0.45), (0.0, 0.8, -0.3), (0.0, 0.45, -1.0)
-    tufts = [(-0.55, 1.700, 0.040, fringe, 0.034), (-0.15, 1.712, 0.046, fringe, 0.036),
-             (0.25, 1.708, 0.044, fringe, 0.034), (0.62, 1.692, 0.036, (0.6, 0.4, 0.3), 0.030),
-             (-0.35, 1.748, 0.040, top, 0.036), (0.30, 1.750, 0.040, top, 0.036),
-             (-1.05, 1.690, 0.034, side, 0.030), (1.05, 1.690, 0.034, side, 0.030),
-             (-1.60, 1.668, 0.030, side, 0.028), (1.60, 1.668, 0.030, side, 0.028),
-             (math.pi - 0.7, 1.720, 0.036, nape, 0.034), (math.pi + 0.7, 1.720, 0.036, nape, 0.034),
-             (math.pi, 1.660, 0.034, nape, 0.034)]
-    for i, (d, z, length, sweep, w) in enumerate(tufts):
+            pts.append(tuple(_head_point(z, a, out_min + rng.uniform(0.0, out_extra))))
+    hull(name, pts, "c_hair")
+
+
+def _hair_locks(prefix, which):
+    rng = _rng(prefix)
+    for i in which:
+        d, z, length, sweep, w = LOCKS[i]
         a = -math.pi / 2 + d
         base = _head_point(z, a, 0.012)
         n = Vector((math.cos(a), math.sin(a), (z - 1.60) / 0.12)).normalized()
@@ -852,17 +892,47 @@ def _build_hair():
         tip = base + (n * 0.35 + Vector(sweep).normalized()).normalized() * length \
             + side * rng.uniform(-0.008, 0.008)
         w += rng.uniform(-0.004, 0.004)
-        hull(f"hair_lock_{i}", [tuple(p) for p in (base - n * 0.022, base + side * w, base - side * w,
-                                                   base + up * w * 0.8, base - up * w * 0.6, tip)], "castano")
+        hull(f"{prefix}{i}", [tuple(p) for p in (base - n * 0.022, base + side * w, base - side * w,
+                                                 base + up * w * 0.8, base - up * w * 0.6, tip)], "c_hair")
+
+
+def _build_hair_styles():
+    """Hair styles (option "hair" of data/character/appearance_options.tres): short with carved
+    locks, long to the shoulders, ponytail and buzz cut."""
+    _hair_cap("hair_short_cap", 0.014, 0.008, 1.786)
+    _hair_locks("hair_short_lock_", range(len(LOCKS)))
+    # Long: the same mass, a fall down the back to the shoulders and a strand beside each cheek.
+    _hair_cap("hair_long_cap", 0.016, 0.008, 1.788)
+    _hair_locks("hair_long_lock_", (0, 1, 2, 4, 5))
+    shell("hair_long_fall", [(1.40, 0, 0.045, 0.150, 0.125), (1.47, 0, 0.035, 0.146, 0.132),
+                             (1.55, 0, 0.022, 0.142, 0.138), (1.63, 0, 0.012, 0.140, 0.140)],
+          "c_hair", math.pi / 2, (1.30, 1.55, 1.75, 1.80), 0.032, sides=12, jitter=0.03)
+    for sx in (-1, 1):
+        hull(f"hair_long_strand_{sx}", [(sx * 0.112, -0.070, 1.665), (sx * 0.136, -0.050, 1.665),
+                                        (sx * 0.118, 0.010, 1.665), (sx * 0.140, 0.000, 1.600),
+                                        (sx * 0.128, -0.060, 1.560), (sx * 0.150, -0.035, 1.500),
+                                        (sx * 0.135, 0.010, 1.520), (sx * 0.142, -0.025, 1.440),
+                                        (sx * 0.128, -0.050, 1.460)], "c_hair")
+    # Ponytail: sleek mass, a tie at the back of the head and the tail hanging over the collar.
+    _hair_cap("hair_tail_cap", 0.010, 0.004, 1.780)
+    _hair_locks("hair_tail_lock_", (1, 2))
+    cylinder("hair_tail_tie", 0.022, 0.022, (0.0, 0.142, 1.620), "tinta", segments=8,
+             rot=(math.pi / 2, 0.0, 0.0))
+    hull("hair_tail_tail", [(0.020, 0.150, 1.632), (-0.020, 0.150, 1.632), (0.0, 0.168, 1.645),
+                            (0.0, 0.152, 1.606), (0.034, 0.190, 1.540), (-0.034, 0.190, 1.540),
+                            (0.0, 0.212, 1.520), (0.0, 0.176, 1.520), (0.012, 0.205, 1.430),
+                            (-0.012, 0.205, 1.430), (0.0, 0.200, 1.405)], "c_hair")
+    # Buzz cut: a thin shell just over the scalp.
+    _hair_cap("hair_buzz_cap", 0.004, 0.003, 1.772)
 
 
 def _build_face():
     for sx in (-1, 1):
         hull(f"ear_{sx}", [(sx * 0.116, -0.012, 1.565), (sx * 0.116, 0.022, 1.575), (sx * 0.116, 0.018, 1.632),
                            (sx * 0.116, -0.010, 1.625), (sx * 0.136, -0.004, 1.572), (sx * 0.141, 0.018, 1.585),
-                           (sx * 0.139, 0.016, 1.628), (sx * 0.134, -0.002, 1.620)], "piel")
+                           (sx * 0.139, 0.016, 1.628), (sx * 0.134, -0.002, 1.620)], "c_skin")
         box(f"eye_{sx}", (0.022, 0.012, 0.017), (sx * 0.042, -0.116, 1.603), "tinta")
-        box(f"brow_{sx}", (0.042, 0.012, 0.012), (sx * 0.044, -0.119, 1.638), "pelo", rot=(0, sx * 0.16, 0))
+        box(f"brow_{sx}", (0.042, 0.012, 0.012), (sx * 0.044, -0.119, 1.638), "c_hair", rot=(0, sx * 0.16, 0))
         # Glasses: two open rims, bridge, hinges and temples back to the ears.
         gx, gy, gz, w, h, bar = sx * 0.045, -0.129, 1.604, 0.058, 0.042, 0.007
         box(f"glasses_top_{sx}", (w, 0.006, bar), (gx, gy, gz + h / 2), "tinta")
@@ -873,43 +943,77 @@ def _build_face():
         box(f"glasses_temple_{sx}", (0.006, 0.124, 0.007), (sx * 0.128, -0.064, gz + 0.012), "tinta")
     box("glasses_bridge", (0.022, 0.006, 0.006), (0.0, -0.129, 1.611), "tinta")
     hull("nose", [(0.0, -0.110, 1.622), (0.017, -0.112, 1.578), (-0.017, -0.112, 1.578), (0.0, -0.146, 1.572),
-                  (0.011, -0.134, 1.565), (-0.011, -0.134, 1.565), (0.0, -0.122, 1.561)], "piel")
-    # Short beard: chin and jaw (front arc), sideburns in front of the ears, moustache, mouth.
-    shell("beard", [(1.452, 0, -0.056, 0.038, 0.034), (1.478, 0, -0.040, 0.074, 0.072),
-                    (1.505, 0, -0.024, 0.097, 0.096), (1.530, 0, -0.011, 0.112, 0.111),
-                    (1.552, 0, -0.006, 0.119, 0.118)],
-          "castano", -math.pi / 2, (1.6, 1.75, 1.85, 1.9, 1.9), 0.022, sides=12, jitter=0.02)
+                  (0.011, -0.134, 1.565), (-0.011, -0.134, 1.565), (0.0, -0.122, 1.561)], "c_skin")
+    # Beards (option "beard"): full (chin, jaw, sideburns), moustache alone, goatee. The mouth
+    # sits on the beard when there is a full one, on the skin otherwise.
+    shell("beard_full_jaw", [(1.452, 0, -0.056, 0.038, 0.034), (1.478, 0, -0.040, 0.074, 0.072),
+                             (1.505, 0, -0.024, 0.097, 0.096), (1.530, 0, -0.011, 0.112, 0.111),
+                             (1.552, 0, -0.006, 0.119, 0.118)],
+          "c_hair", -math.pi / 2, (1.6, 1.75, 1.85, 1.9, 1.9), 0.022, sides=12, jitter=0.02)
     for sx, centre in ((1, -0.35), (-1, math.pi + 0.35)):
-        shell(f"sideburn_{sx}", [(1.530, 0, -0.010, 0.116, 0.116), (1.590, 0, 0.0, 0.132, 0.132),
-                                 (1.640, 0, 0.004, 0.134, 0.134)],
-              "castano", centre, (0.22, 0.22, 0.2), 0.022, sides=3)
-    hull("moustache", [(0.034, -0.118, 1.546), (-0.034, -0.118, 1.546), (0.022, -0.131, 1.552),
-                       (-0.022, -0.131, 1.552), (0.0, -0.136, 1.556), (0.0, -0.124, 1.565),
-                       (0.03, -0.121, 1.539), (-0.03, -0.121, 1.539)], "castano")
-    box("mouth", (0.032, 0.006, 0.006), (0.0, -0.134, 1.532), "tinta")
+        shell(f"beard_full_sideburn_{sx}", [(1.530, 0, -0.010, 0.116, 0.116), (1.590, 0, 0.0, 0.132, 0.132),
+                                            (1.640, 0, 0.004, 0.134, 0.134)],
+              "c_hair", centre, (0.22, 0.22, 0.2), 0.022, sides=3)
+    shell("beard_goatee_chin", [(1.452, 0, -0.056, 0.038, 0.034), (1.478, 0, -0.040, 0.072, 0.070),
+                                (1.505, 0, -0.024, 0.093, 0.093), (1.526, 0, -0.012, 0.105, 0.105)],
+          "c_hair", -math.pi / 2, (1.2, 0.75, 0.55, 0.42), 0.020, sides=8, jitter=0.02)
+    hull("beard_any_moustache", [(0.034, -0.118, 1.546), (-0.034, -0.118, 1.546), (0.022, -0.131, 1.552),
+                                 (-0.022, -0.131, 1.552), (0.0, -0.136, 1.556), (0.0, -0.124, 1.565),
+                                 (0.03, -0.121, 1.539), (-0.03, -0.121, 1.539)], "c_hair")
+    box("mouth_beard", (0.032, 0.006, 0.006), (0.0, -0.134, 1.532), "tinta")
+    box("mouth_skin", (0.030, 0.006, 0.005), (0.0, -0.119, 1.534), "tinta")
 
 
-def _build_torso():
-    shell("jacket", JACKET, "salvia", math.pi / 2, [math.pi - g for g in JACKET_OPEN], 0.018,
-          sides=16, jitter=0.015)
-    shell("jacket_collar", [(1.395, 0, 0.010, 0.112, 0.088, 2.2), (1.440, 0, 0.012, 0.086, 0.073, 2.2),
-                            (1.485, 0, 0.014, 0.078, 0.068, 2.2)],
-          "salvia_oscura", math.pi / 2, (2.25, 2.3, 2.35), 0.014, sides=12)
-    patch("jacket_pocket", JACKET, -0.150, -0.080, 1.17, 1.24, 0.006, "salvia_oscura")
-    loft("shirt", SHIRT, "hueso", sides=12)
-    patch("shirt_print", SHIRT, -0.026, 0.026, 1.205, 1.255, 0.004, "grafito")
-    patch("shirt_print_cursor", SHIRT, -0.014, 0.004, 1.222, 1.230, 0.003, "mostaza", lift=0.004)
-    loft("jeans_hips", PELVIS, "vaquero", sides=12)
-    loft("belt", BELT, "cuero", sides=12)
-    patch("belt_buckle", BELT, -0.022, 0.022, 0.928, 0.962, 0.007, "acero")
-    loft("neck", [(1.40, 0, 0.010, 0.050, 0.047), (1.505, 0, 0.012, 0.046, 0.044)], "piel")
-    loft("head", HEAD, "piel", sides=12)
+def _build_torso_variants():
+    """Torso garments per body and per top (options "body" and "top"): open overshirt over a
+    T-shirt, hoodie, T-shirt. The jeans, belt and buckle go per body."""
+    collar = [(1.395, 0, 0.010, 0.112, 0.088, 2.2), (1.440, 0, 0.012, 0.086, 0.073, 2.2),
+              (1.485, 0, 0.014, 0.078, 0.068, 2.2)]
+    for body, rings in BODY.items():
+        p = f"torso_{body}_overshirt_"
+        shell(p + "jacket", rings["jacket"], "c_top", math.pi / 2, [math.pi - g for g in rings["open"]],
+              0.018, sides=16, jitter=0.015)
+        shell(p + "collar", collar, "c_top_trim", math.pi / 2, (2.25, 2.3, 2.35), 0.014, sides=12)
+        patch(p + "pocket", rings["jacket"], -0.150, -0.080, 1.17, 1.24, 0.006, "c_top_trim")
+        loft(p + "shirt", rings["shirt"], "c_shirt", sides=12)
+        patch(p + "print", rings["shirt"], -0.026, 0.026, 1.205, 1.255, 0.004, "grafito")
+        patch(p + "print_cursor", rings["shirt"], -0.014, 0.004, 1.222, 1.230, 0.003, "mostaza", lift=0.004)
+
+        p = f"torso_{body}_hoodie_"
+        hoodie = [(0.80, 0, 0.0, rings["jacket"][0][3] - 0.008, rings["jacket"][0][4] - 0.005, 2.4)] \
+            + rings["jacket"] + [(1.45, 0, 0.010, 0.085, 0.072, 2.2)]
+        loft(p + "body", hoodie, "c_top", sides=16, jitter=0.015)
+        j0 = rings["jacket"][0]
+        loft(p + "hem", [(0.795, 0, 0.0, j0[3] - 0.004, j0[4] - 0.002, 2.4),
+                         (0.862, 0, 0.0, j0[3] + 0.006, j0[4] + 0.006, 2.4)], "c_top_trim", sides=16)
+        shell(p + "hood", [(1.40, 0, 0.050, 0.150, 0.130), (1.46, 0, 0.060, 0.135, 0.125),
+                           (1.52, 0, 0.060, 0.105, 0.100)],
+              "c_top", math.pi / 2, (2.0, 1.9, 1.7), 0.035, sides=12, jitter=0.03)
+        patch(p + "pocket", hoodie, -0.090, 0.090, 0.90, 1.02, 0.008, "c_top_trim")
+        for sx in (-1, 1):
+            y = _front_y(hoodie, sx * 0.03, 1.36)
+            box(f"{p}string_{sx}", (0.006, 0.006, 0.08), (sx * 0.03, y - 0.004, 1.35), "c_shirt")
+
+        p = f"torso_{body}_tshirt_"
+        loft(p + "body", rings["tee"], "c_top", sides=14, jitter=0.01)
+        loft(p + "collar", [(1.452, 0, 0.010, 0.084, 0.072, 2.2), (1.474, 0, 0.010, 0.064, 0.058, 2.2)],
+             "c_top_trim", sides=12)
+        patch(p + "print", rings["tee"], -0.026, 0.026, 1.205, 1.255, 0.004, "grafito")
+        patch(p + "print_cursor", rings["tee"], -0.014, 0.004, 1.222, 1.230, 0.003, "mostaza", lift=0.004)
+
+        loft(f"hips_{body}_jeans", rings["pelvis"], "c_pants", sides=12)
+        loft(f"hips_{body}_belt", rings["belt"], "cuero", sides=12)
+        patch(f"hips_{body}_buckle", rings["belt"], -0.022, 0.022, 0.928, 0.962, 0.007, "acero")
+    loft("neck", [(1.40, 0, 0.010, 0.050, 0.047), (1.505, 0, 0.012, 0.046, 0.044)], "c_skin")
+    loft("head", HEAD, "c_skin", sides=12)
 
 
 def build_character_player():
-    """The player character (~1.78 m with hair): a homelab tinkerer in an open sage overshirt,
-    T-shirt with a terminal print, jeans and trainers, glasses and a short beard. Faceted low-poly in the game palette. Articulated exactly like the mannequin
-    (J_hip / J_knee / J_ankle, J_shoulder / J_elbow, suffix _L / _R) for CharacterAnimator."""
+    """The player character (~1.78 m with hair), faceted low-poly in the game palette, with every
+    piece of every look the player can choose (docs/ART_STYLE.md §6.1): body (chico / chica),
+    hair, beard, glasses and top (open overshirt over a T-shirt, hoodie, T-shirt). The game
+    shows the chosen pieces and recolours the c_* materials. Articulated exactly like the
+    mannequin (J_hip / J_knee / J_ankle, J_shoulder / J_elbow, suffix _L / _R)."""
     for sx, side in ((-1, "L"), (1, "R")):
         x = sx * 0.085
         hip = empty(f"J_hip_{side}", (x, 0, 0.84), size=0.05)
@@ -919,45 +1023,58 @@ def build_character_player():
                                          (0.62, x, -0.004, 0.068, 0.072),
                                          (0.78, x + sx * 0.004, -0.004, 0.077, 0.080),
                                          (0.90, x + sx * 0.004, 0.000, 0.074, 0.076)],
-                         "vaquero", jitter=0.03), hip)
-        parent_keep(ball(f"knee_{sx}", (x, 0, 0.44), 0.052, "vaquero"), knee)
+                         "c_pants", jitter=0.03), hip)
+        parent_keep(ball(f"knee_{sx}", (x, 0, 0.44), 0.052, "c_pants"), knee)
         parent_keep(loft(f"shin_{sx}", [(0.09, x, 0.000, 0.044, 0.047), (0.16, x, 0.000, 0.046, 0.049),
                                         (0.27, x, 0.006, 0.049, 0.053), (0.37, x, 0.008, 0.054, 0.058),
-                                        (0.47, x, 0.000, 0.052, 0.055)], "vaquero", jitter=0.03), knee)
+                                        (0.47, x, 0.000, 0.052, 0.055)], "c_pants", jitter=0.03), knee)
         parent_keep(loft(f"hem_{sx}", [(0.105, x, 0, 0.052, 0.055), (0.125, x, 0, 0.056, 0.059),
-                                       (0.155, x, 0, 0.053, 0.056)], "vaquero_claro"), knee)
+                                       (0.155, x, 0, 0.053, 0.056)], "c_pants_hem"), knee)
         parent_keep(loft(f"shoe_{sx}", [(0.088, x, 0.050, 0.030, 0.030, 2.2), (0.070, x, 0.058, 0.047, 0.048, 2.2),
                                         (0.020, x, 0.064, 0.054, 0.054, 2.2), (-0.040, x, 0.050, 0.056, 0.040, 2.2),
                                         (-0.095, x, 0.040, 0.053, 0.030, 2.2), (-0.135, x, 0.034, 0.042, 0.022, 2.2),
-                                        (-0.150, x, 0.030, 0.020, 0.012, 2.2)], "grafito", axis="y", jitter=0.03),
+                                        (-0.150, x, 0.030, 0.020, 0.012, 2.2)], "c_shoes", axis="y", jitter=0.03),
                     ankle)
         parent_keep(loft(f"sole_{sx}", [(0.092, x, 0.011, 0.036, 0.011, 3.0), (0.075, x, 0.011, 0.052, 0.011, 3.5),
                                         (-0.090, x, 0.011, 0.058, 0.011, 3.5), (-0.140, x, 0.012, 0.046, 0.011, 3.0),
-                                        (-0.156, x, 0.014, 0.024, 0.009, 2.5)], "hueso", axis="y", tones=False),
+                                        (-0.156, x, 0.014, 0.024, 0.009, 2.5)], "c_sole", axis="y", tones=False),
                     ankle)
         parent_keep(hull(f"laces_{sx}", [(x + 0.020, 0.000, 0.118), (x - 0.020, 0.000, 0.118),
                                          (x + 0.016, -0.070, 0.086), (x - 0.016, -0.070, 0.086),
                                          (x + 0.016, 0.000, 0.104), (x - 0.016, 0.000, 0.104),
                                          (x + 0.012, -0.070, 0.074), (x - 0.012, -0.070, 0.074)],
-                         "hueso", tones=False), ankle)
+                         "c_sole", tones=False), ankle)
         parent_keep(ankle, knee)
         parent_keep(knee, hip)
 
         ax = sx * 0.265
         shoulder = empty(f"J_shoulder_{side}", (ax, 0, 1.35), size=0.05)
         elbow = empty(f"J_elbow_{side}", (ax, 0, 1.08), size=0.05)
-        parent_keep(loft(f"sleeve_{sx}", [(1.06, ax, 0.0, 0.047, 0.049), (1.12, ax, 0.0, 0.052, 0.054),
-                                          (1.25, ax, 0.0, 0.057, 0.059), (1.33, ax, 0.0, 0.059, 0.061),
-                                          (1.385, ax - sx * 0.012, 0.0, 0.050, 0.053),
-                                          (1.412, ax - sx * 0.028, 0.0, 0.0, 0.0)], "salvia", jitter=0.03),
+        # Long sleeves (overshirt, hoodie).
+        parent_keep(loft(f"sleeve_long_upper_{sx}", [(1.06, ax, 0.0, 0.047, 0.049), (1.12, ax, 0.0, 0.052, 0.054),
+                                                     (1.25, ax, 0.0, 0.057, 0.059), (1.33, ax, 0.0, 0.059, 0.061),
+                                                     (1.385, ax - sx * 0.012, 0.0, 0.050, 0.053),
+                                                     (1.412, ax - sx * 0.028, 0.0, 0.0, 0.0)], "c_top", jitter=0.03),
                     shoulder)
-        parent_keep(ball(f"elbow_{sx}", (ax, 0, 1.08), 0.049, "salvia"), elbow)
-        parent_keep(loft(f"forearm_{sx}", [(0.855, ax, 0.0, 0.048, 0.050), (0.90, ax, 0.0, 0.050, 0.052),
-                                           (1.00, ax, -0.004, 0.052, 0.054), (1.10, ax, 0.0, 0.049, 0.051)],
-                         "salvia", jitter=0.03), elbow)
-        parent_keep(loft(f"cuff_{sx}", [(0.835, ax, 0, 0.050, 0.052), (0.865, ax, 0, 0.055, 0.057),
-                                        (0.885, ax, 0, 0.053, 0.055)], "salvia_oscura"), elbow)
-        parent_keep(loft(f"wrist_{sx}", [(0.80, ax, 0, 0.028, 0.030), (0.85, ax, 0, 0.030, 0.032)], "piel"),
+        parent_keep(ball(f"sleeve_long_elbow_{sx}", (ax, 0, 1.08), 0.049, "c_top"), elbow)
+        parent_keep(loft(f"sleeve_long_fore_{sx}", [(0.855, ax, 0.0, 0.048, 0.050), (0.90, ax, 0.0, 0.050, 0.052),
+                                                    (1.00, ax, -0.004, 0.052, 0.054), (1.10, ax, 0.0, 0.049, 0.051)],
+                         "c_top", jitter=0.03), elbow)
+        parent_keep(loft(f"sleeve_long_cuff_{sx}", [(0.835, ax, 0, 0.050, 0.052), (0.865, ax, 0, 0.055, 0.057),
+                                                    (0.885, ax, 0, 0.053, 0.055)], "c_top_trim"), elbow)
+        # Short sleeves and bare arms (T-shirt).
+        parent_keep(loft(f"sleeve_short_{sx}", [(1.20, ax, 0.0, 0.058, 0.060), (1.25, ax, 0.0, 0.059, 0.061),
+                                                (1.33, ax, 0.0, 0.060, 0.062),
+                                                (1.385, ax - sx * 0.012, 0.0, 0.051, 0.054),
+                                                (1.412, ax - sx * 0.028, 0.0, 0.0, 0.0)], "c_top", jitter=0.03),
+                    shoulder)
+        parent_keep(loft(f"arm_skin_upper_{sx}", [(1.06, ax, 0.0, 0.040, 0.042), (1.12, ax, 0.0, 0.043, 0.045),
+                                                  (1.24, ax, 0.0, 0.047, 0.049)], "c_skin"), shoulder)
+        parent_keep(ball(f"arm_skin_elbow_{sx}", (ax, 0, 1.08), 0.042, "c_skin"), elbow)
+        parent_keep(loft(f"arm_skin_fore_{sx}", [(0.83, ax, 0.0, 0.031, 0.033), (0.90, ax, 0.0, 0.039, 0.041),
+                                                 (1.00, ax, -0.003, 0.043, 0.045), (1.10, ax, 0.0, 0.041, 0.043)],
+                         "c_skin"), elbow)
+        parent_keep(loft(f"wrist_{sx}", [(0.80, ax, 0, 0.028, 0.030), (0.85, ax, 0, 0.030, 0.032)], "c_skin"),
                     elbow)
         hx = sx * 0.268
         hand = [(hx + dx, dy, 0.828) for dx in (-0.016, 0.016) for dy in (-0.028, 0.028)]
@@ -966,11 +1083,11 @@ def build_character_player():
         hand += [(hx + dx, dy, 0.733) for dx in (-0.012, 0.012) for dy in (-0.034, 0.034)]
         hand += [(hx, -0.018, 0.722), (hx, 0.018, 0.722), (hx - sx * 0.016, -0.052, 0.800),
                  (hx - sx * 0.022, -0.060, 0.772), (hx - sx * 0.010, -0.058, 0.765)]
-        parent_keep(hull(f"hand_{sx}", hand, "piel"), elbow)
+        parent_keep(hull(f"hand_{sx}", hand, "c_skin"), elbow)
         parent_keep(elbow, shoulder)
-    _build_torso()
+    _build_torso_variants()
     _build_face()
-    _build_hair()
+    _build_hair_styles()
 
 
 MODELS = {

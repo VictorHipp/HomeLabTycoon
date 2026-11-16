@@ -1,6 +1,7 @@
 class_name GameMenu
 extends CanvasLayer
-## In-game menu (pauses the game): Continue, Manual, Controls (Settings), Save and Load.
+## In-game menu (pauses the game): Continue, Manual, Controls (Settings), Save, Load and back to
+## the title screen.
 ## Opened with Esc in the overview, the "Menú" buttons of the HUD and of the computer screen,
 ## and F1 for the manual. Works while the game is paused (process mode ALWAYS).
 
@@ -10,6 +11,8 @@ var manual: ManualView
 var _content: VBoxContainer
 var _status: Label
 var _load_button: Button
+var _title_button: Button
+var _title_armed: bool = false ## The first press warns; the second one leaves.
 
 
 func setup(game: GameSession) -> void:
@@ -45,6 +48,9 @@ func setup(game: GameSession) -> void:
 	nav.add_child(UiStyle.button(TranslationServer.translate("Guardar partida"), _save))
 	_load_button = UiStyle.button(TranslationServer.translate("Cargar partida"), _load)
 	nav.add_child(_load_button)
+	_title_button = UiStyle.button(TranslationServer.translate("Volver al menú principal"), _to_title)
+	_title_button.name = "ToTitle"
+	nav.add_child(_title_button)
 	_status = UiStyle.label("", 14, UiStyle.OK)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(200, 0)
@@ -59,6 +65,7 @@ func open(page: StringName = &"controls") -> void:
 	visible = true
 	get_tree().paused = true
 	_status.text = ""
+	_title_armed = false
 	_load_button.disabled = not SaveService.has_save()
 	show_page(page)
 
@@ -139,6 +146,16 @@ func _save() -> void:
 	_status.text = r["message"]
 	_status.add_theme_color_override("font_color", UiStyle.OK if r["ok"] else UiStyle.BAD)
 	_load_button.disabled = not SaveService.has_save()
+
+
+## Back to the title screen. What was not saved is lost: the first press says so.
+func _to_title() -> void:
+	if not _title_armed:
+		_title_armed = true
+		_status.text = TranslationServer.translate("Lo que no hayas guardado se perderá. Pulsa otra vez «Volver al menú principal» para salir.")
+		_status.add_theme_color_override("font_color", UiStyle.WARN)
+		return
+	GameLauncher.back_to_title(get_tree())
 
 
 func _load() -> void:

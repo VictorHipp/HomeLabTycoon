@@ -113,17 +113,27 @@ Decisión registrada en [ADR 0012](adr/0012-faceted-player-character.md).
 El usuario pidió (2026-11-16) más modelado en el personaje, con el nivel de talla de una imagen de referencia facetada, pero con ropa y estilo del juego. Solo está confirmado ese **modelado facetado**. El rig estándar, el atlas de expresiones y los accesorios modulares de §6 siguen siendo `[PROPUESTA]`.
 
 - **Modelo:** `character_player` (`assets/models/characters/`), generado por `build_character_player` en `tools/blender/build_prototype_models.py`. Sustituye al maniquí en el juego (`PlayerCharacter.MODEL`).
-- **Aspecto:** cacharrero de homelab con sobrecamisa salvia abierta (cuello y puños más oscuros, bolsillo), camiseta hueso con un estampado de terminal, vaqueros apagados con el bajo vuelto, cinturón, zapatillas, gafas, barba corta y pelo tallado en mechones.
+- **Aspecto por defecto:** cacharrero de homelab con sobrecamisa salvia abierta (cuello y puños más oscuros, bolsillo), camiseta hueso con un estampado de terminal, vaqueros apagados con el bajo vuelto, cinturón, zapatillas, gafas, barba corta y pelo tallado en mechones.
+- **Personalización** (pedida por el usuario el 2026-11-16, [ADR 0014](adr/0014-title-menu-and-character-look.md)):
+  - el modelo trae todas las piezas de todos los aspectos y el juego muestra las elegidas;
+  - **cuerpo:** chico o chica. Mismas articulaciones y extremidades; cambian el torso, la cintura, el pecho y la cadera de cada prenda;
+  - **pelo:** corto con mechones, largo hasta los hombros, coleta o rapado;
+  - **barba:** ninguna, corta, bigote o perilla. La boca va sobre la barba o sobre la piel;
+  - **gafas:** sí o no;
+  - **prenda de arriba:** sobrecamisa abierta, sudadera con capucha y bolsillo, o camiseta de manga corta con los brazos al aire;
+  - **colores:** piel, pelo, prenda, pantalón y zapatillas, de la paleta del hogar.
+  - **Datos:** opciones, textos y colores en `data/character/appearance_options.tres`. Cada opción lista los prefijos de las piezas que muestra. Una pieza se oculta si alguna opción de su ranura la reclama y la elegida no.
+  - **Color:** las prendas, el pelo y la piel usan materiales `c_*` (`c_top`, `c_top_trim`, `c_hair`, `c_skin`, `c_pants`, `c_pants_hem`, `c_shoes`…), con sus tonos `_t1` y `_t2`. El juego los sustituye por copias con el color elegido en cada personaje (`CharacterAppearance.apply`); el material importado no se toca. Cuello, puños y bolsillo siguen al color de la prenda (×0,8) y el bajo del pantalón al del pantalón (×1,2).
 - **Cómo se talla:**
   - secciones de 8–16 lados a varias alturas, estrechadas y con algo de ruido fijo;
   - prendas abiertas con grosor real;
   - piezas convexas para nariz, orejas, manos y mechones;
   - caras planas trianguladas, sin bisel;
   - cada triángulo con uno de **tres tonos** de su color (100 %, 87 % y 109 %). Las caras se leen por el tono, como en la referencia. Las semillas son fijas, así que el `.glb` es reproducible.
-- **Colores nuevos de atrezo:** salvia oscura, vaquero, vaquero claro, cuero y castaño. No se usa ningún color funcional (LED, cables, resaltado).
+- **Colores nuevos de atrezo:** cuero y los colores por defecto de las ranuras `c_*`. No se usa ningún color funcional (LED, cables, resaltado).
 - **Mismas articulaciones que el maniquí:** `J_hip`, `J_knee`, `J_ankle`, `J_shoulder` y `J_elbow` (`_L` y `_R`), a las mismas alturas, para que `CharacterAnimator` y sus pruebas sigan valiendo. Cada pieza es rígida y cuelga de su articulación; rodillas y codos llevan una esfera de relleno para que no se abra un hueco al doblarse.
 - **La ropa sigue a las piezas rígidas:** la chaqueta acaba en la cadera y no hay nada largo, porque al sentarse los muslos giran 88°.
-- **Presupuesto:** 3598 triángulos, 76 piezas y 33 materiales.
+- **Presupuesto:** cada aspecto muestra entre 2560 y 3614 triángulos (las combinaciones renderizadas). El archivo con todas las piezas tiene 7896 triángulos y 130 piezas.
 - **Comprobado:**
   - en el juego: vista general de pie, andando y sentado (recorrido automático y capturas del manual);
   - en una escena de prueba aparte: de pie, a media zancada y sentado. El antebrazo queda unos 5 cm por encima de la mesa (puño a ≈ 0,80 m, tablero a 0,75 m).

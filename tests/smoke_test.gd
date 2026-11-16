@@ -77,10 +77,11 @@ func _check_main_scene() -> void:
 	if packed == null:
 		_failures.append("main.tscn did not load")
 		return
-	# Not added to the tree here: the full session (navigation bake, UI) is exercised by the
-	# "run main" step of tools/check_project.ps1 and by the automated walkthrough.
+	# Not added to the tree here: the title screen and the full session (navigation bake, UI)
+	# are exercised by the "run main" and "run game" steps of tools/check_project.ps1 and by the
+	# automated walkthrough.
 	var main := packed.instantiate()
-	_expect(main is GameSession, "main scene root is the GameSession")
+	_expect(main is GameLauncher, "main scene root is the GameLauncher (title screen or game)")
 	main.free()
 
 
