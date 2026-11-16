@@ -2,8 +2,9 @@ class_name SimDevice
 extends RefCounted
 ## One concrete piece of hardware owned by the player (an instance of a HardwareDefinition).
 
-## Where the instance is: in_transit | package | inventory | placed | mounted | cabled | fixed
-## (fixed = part of the starting scenario, e.g. the PC on the desk).
+## Where the instance is: in_transit | package | inventory | placed | mounted | cabled | fixed | sold
+## (fixed = part of the starting scenario, e.g. the PC on the desk; sold = sold second hand: kept
+## so that old orders and the ledger can still name it).
 var location: StringName = &"inventory"
 var id: int
 var definition: HardwareDefinition
@@ -15,6 +16,11 @@ var power_switch_on: bool = true ## Only meaningful for devices with a power but
 var state: StringName = &"off" ## off | booting | running
 var boot_left_minutes: float = 0.0
 var host: SimHost = null
+## Installed or plugged in at least once: the second-hand market pays less for it (Economy).
+var used: bool = false
+## Bought in the shop (with its box). Only these can be sold second hand: what the house came
+## with (PC, router, strip and their cables) was never paid for.
+var bought: bool = false
 
 
 func _init(device_id: int, def: HardwareDefinition) -> void:
@@ -53,6 +59,8 @@ func save_state() -> Dictionary:
 		"state": String(state),
 		"boot_left_minutes": boot_left_minutes,
 		"host": host.save_state() if host != null else null,
+		"used": used,
+		"bought": bought,
 	}
 
 
@@ -72,6 +80,9 @@ static func from_state(data: Dictionary, catalog: Catalog) -> SimDevice:
 	d.power_switch_on = bool(data["power_switch_on"])
 	d.state = StringName(data["state"])
 	d.boot_left_minutes = float(data["boot_left_minutes"])
+	# Saves of version 1 have no "used": anything in the room had been installed.
+	d.used = bool(data.get("used", d.location in [&"placed", &"mounted", &"cabled", &"fixed"]))
+	d.bought = bool(data.get("bought", false)) # version 1: SimWorld.load_state rebuilds it from the orders
 	if d.host != null and data.get("host") is Dictionary:
 		d.host.load_state(data["host"])
 	return d

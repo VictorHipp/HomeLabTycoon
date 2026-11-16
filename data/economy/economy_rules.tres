@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="EconomyRules" format=3]
+
+[ext_resource type="Script" path="res://sim/economy/economy_rules.gd" id="1_rules"]
+
+[resource]
+script = ExtResource("1_rules")
+resale_unused_percent = 60
+resale_used_percent = 45
+passive_daily_cap = 60

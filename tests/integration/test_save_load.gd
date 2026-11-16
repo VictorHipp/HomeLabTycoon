@@ -2,8 +2,8 @@ extends TestCase
 ## Save / load of the simulation (docs/ARCHITECTURE.md §7, docs/TEST_PLAN.md H7-05/H7-06):
 ## save -> load -> save gives the same text, and the loaded game behaves the same.
 
-const RACK_POS := Vector3(0.9, 0.0, 0.5)
-const RACK_YAW := 90.0
+const RACK_POS := Vector3(0.2, 0.0, 0.6)
+const RACK_YAW := 0.0 ## Rear (power) towards the desk: the 3 m cords that come with the equipment reach the strip.
 
 var world: SimWorld
 

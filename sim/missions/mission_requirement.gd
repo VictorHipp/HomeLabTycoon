@@ -7,3 +7,5 @@ extends Resource
 @export var text: String = "" ## Shown to the player (Spanish source text, gettext style).
 @export var validator: StringName = &"" ## Name understood by MissionValidators.check().
 @export var params: Dictionary = {}
+## XP given the first time the requirement is met (once: undoing and redoing it gives nothing).
+@export var xp: int = 0

@@ -37,7 +37,11 @@ var obstacles: Array[Rect2] = [] ## Furniture footprints (x, z).
 var delivery_zone: Rect2 = Rect2()
 ## Furniture that stands on the floor: cables go around it (a desk on legs only counts its legs).
 var cable_obstacles: Array[Rect2] = []
+## Floor in front of each door: kept free (nothing is placed there and no cable crosses it).
+var door_zones: Array[Rect2] = []
+var wall_trim_m: float = 0.0 ## Skirting boards: cables run in front of them.
 var mission: MissionTracker = null
+var economy: Economy ## Ledger, passive income, second-hand prices.
 
 var _next_id: int = 1
 var _router: CableRouter = null
@@ -48,6 +52,7 @@ var _route_cache_version: int = -1
 
 func _init(catalog_to_use: Catalog = null) -> void:
 	catalog = catalog_to_use if catalog_to_use != null else Catalog.load_default()
+	economy = Economy.new()
 
 
 # ------------------------------------------------------------------ devices --
@@ -111,6 +116,9 @@ func step_minutes(minutes: float) -> void:
 		NetworkEngine.update_dhcp(self)
 		if mission != null:
 			mission.evaluate(self)
+		var income := economy.accrue(self, dt)
+		if income > 0:
+			grant_rewards(income, 0, &"passive", tr("Ingresos pasivos: equipos en línea en la red de casa"))
 
 
 ## Minutes until the next scheduled thing (delivery or end of a boot), or -1 if none.
@@ -140,6 +148,12 @@ func clock_text() -> String:
 
 
 ## Metres with the Spanish decimal comma (`3,1`).
+## A length that is needed, rounded up to the decimetre: 3.02 m is "3,1" (never "3,0 m needed,
+## the cable is 3 m").
+static func metres_needed(value: float) -> String:
+	return metres(ceilf(value * 10.0 - 0.0001) / 10.0)
+
+
 static func metres(value: float, decimals: int = 1) -> String:
 	if decimals <= 0:
 		return str(roundi(value))
@@ -156,12 +170,22 @@ static func format_duration(minutes: float) -> String:
 
 # ------------------------------------------------------------------ economy --
 
-func grant_rewards(reward_credits: int, reward_xp: int) -> void:
+## Adds credits and XP and writes the reason in the ledger (economy.ledger). Every change of
+## credits or XP goes through here or through purchase / sell_device.
+func grant_rewards(reward_credits: int, reward_xp: int, kind: StringName = &"reward", text: String = "") -> void:
 	var old_level := level()
 	credits += reward_credits
 	xp += reward_xp
-	_emit(&"money_changed", {"credits": credits})
-	_emit(&"xp_changed", {"xp": xp, "level": level(), "level_up": level() > old_level})
+	economy.record(time_minutes, reward_credits, reward_xp, kind, text)
+	if reward_credits != 0:
+		_emit(&"money_changed", {"credits": credits, "delta": reward_credits, "kind": kind})
+	if reward_xp != 0:
+		_emit(&"xp_changed", {"xp": xp, "delta": reward_xp, "level": level(), "level_up": level() > old_level, "text": text})
+
+
+## The value the world's state has now: grows with every event (for caches of derived data).
+func state_version() -> int:
+	return _state_version
 
 
 func level() -> int:
@@ -210,15 +234,19 @@ func purchase(item_ids: Array[StringName]) -> CommandResult:
 	if buyer == null or not NetworkEngine.has_internet(self, buyer):
 		return CommandResult.failure(tr("La tienda no responde: el ordenador no tiene conexión a Internet."))
 	credits -= total
+	economy.record(time_minutes, -total, 0, &"purchase", tr("Pedido en la tienda (%d productos)") % item_ids.size())
 	# One box per piece of hardware (with its accessories); loose cables share one box.
 	var groups: Array = []
 	var cables_box: Array[int] = []
 	for item_id: StringName in item_ids:
 		var group: Array[int] = []
 		var main := create_device(item_id, &"in_transit")
+		main.bought = true
 		group.append(main.id)
 		for extra: StringName in main.definition.box_contents:
-			group.append(create_device(extra, &"in_transit").id)
+			var accessory := create_device(extra, &"in_transit")
+			accessory.bought = true
+			group.append(accessory.id)
 		if main.definition.category == &"cable":
 			cables_box.append_array(group)
 		else:
@@ -230,8 +258,30 @@ func purchase(item_ids: Array[StringName]) -> CommandResult:
 	_next_id += 1
 	orders.append(order)
 	_emit(&"order_placed", {"order_id": order["id"], "eta": order["eta"]})
-	_emit(&"money_changed", {"credits": credits})
+	_emit(&"money_changed", {"credits": credits, "delta": -total, "kind": &"purchase"})
 	return CommandResult.success(tr("Pedido realizado: %d créditos. Llegará en %s.") % [total, format_duration(DELIVERY_MINUTES)], order["id"])
+
+
+## Second-hand market (docs/PROGRESSION.md §8): sells something of the inventory for less than it
+## cost (Economy.resale_price). Like the shop, it needs the computer online. The device is kept
+## with location "sold", so old orders and the ledger can still name it.
+func sell_device(device_id: int) -> CommandResult:
+	var d := get_device(device_id)
+	if d == null or d.location == &"sold":
+		return CommandResult.failure(tr("Ese objeto ya no es tuyo."))
+	if d.location != &"inventory":
+		return CommandResult.failure(tr("Solo se vende lo que está en el inventario: recoge, desmonta o desconecta antes %s.") % d.display_name())
+	var price := economy.resale_price(d)
+	if price <= 0:
+		return CommandResult.failure(tr("%s no se puede vender: es parte de la casa.") % d.display_name())
+	var seller := _first_running(&"computer")
+	if seller == null or not NetworkEngine.has_internet(self, seller):
+		return CommandResult.failure(tr("El mercado de segunda mano no responde: el ordenador no tiene conexión a Internet."))
+	d.location = &"sold"
+	var state := tr("usado") if d.used else tr("sin estrenar")
+	grant_rewards(price, 0, &"sale", tr("Venta de segunda mano: %s (%s)") % [d.display_name(), state])
+	_emit(&"device_sold", {"device_id": d.id, "price": price})
+	return CommandResult.success(tr("Vendido: %s por %d créditos.") % [d.display_name(), price], price)
 
 
 func _process_orders() -> void:
@@ -363,6 +413,9 @@ func placement_problem(device_id: int, pos: Vector3, yaw_degrees: float) -> Stri
 			return tr("No cabe ahí: choca con %s.") % other.display_name()
 	if rect.intersects(delivery_zone):
 		return tr("Esa zona junto a la puerta está reservada para las entregas.")
+	for door: Rect2 in door_zones:
+		if rect.intersects(door):
+			return tr("No cabe ahí: cerrarías el paso de la puerta.")
 	for package: Dictionary in packages.values():
 		if rect.intersects(_package_rect(package)):
 			return tr("No cabe ahí: hay un paquete en medio.")
@@ -410,14 +463,14 @@ func _cable_problem_if_placed(d: SimDevice, pos: Vector3, yaw_degrees: float) ->
 	var problem := ""
 	for cable_id: int in affected:
 		var ends: Dictionary = cable_ends[cable_id]
-		var route := route_between(ends["a"], ends["b"])
+		var route := route_between(ends["a"], ends["b"], _cable_length(cable_id))
 		var spec := get_device(cable_id).definition.get_spec(CableSpec) as CableSpec
 		var name := get_device(cable_id).definition.model
 		if not route["ok"]:
 			problem = tr("Ahí cortaría el paso del cable %s: %s") % [name, route["reason"]]
 			break
 		if route["length"] > spec.length_m:
-			problem = tr("Con %s ahí, el cable %s no llegaría: harían falta unos %s m y mide %s m.") % [d.display_name(), name, metres(route["length"]), metres(spec.length_m, 0)]
+			problem = tr("Con %s ahí, el cable %s no llegaría: harían falta unos %s m y mide %s m.") % [d.display_name(), name, metres_needed(route["length"]), metres(spec.length_m, 0)]
 			break
 	d.location = saved[0]
 	d.position = saved[1]
@@ -448,6 +501,7 @@ func place_device(device_id: int, pos: Vector3, yaw_degrees: float) -> CommandRe
 	d.location = &"placed"
 	d.position = Vector3(pos.x, 0.0, pos.z)
 	d.yaw_degrees = fposmod(round(yaw_degrees / 90.0) * 90.0, 360.0)
+	d.used = true
 	_emit(&"device_placed", {"device_id": d.id})
 	_refresh()
 	return CommandResult.success((tr("%s movido.") if moved else tr("%s colocado.")) % d.display_name())
@@ -487,7 +541,7 @@ func rack_power_estimate(device_id: int, pos: Vector3, yaw_degrees: float) -> Di
 		var outlet := strip.definition.ports[0]
 		var rack_end := _rack_post_end(d, &"rear", height, _center2(strip))
 		var strip_end := _cable_end(strip, outlet, rack_end["exit"])
-		var path := _cable_router().find_path(rack_end["exit"], strip_end["exit"], _floor_device_rects())
+		var path := _cable_router().find_path(rack_end["exit"], strip_end["exit"], _floor_device_rects(), 1.0)
 		if not path.is_empty():
 			needed = minf(needed, rack_end["drop"] + CableRouter.length_of(path) + strip_end["drop"] + CABLE_SLACK_M)
 	d.location = saved[0]
@@ -549,6 +603,7 @@ func mount_device(device_id: int, rack_id: int, first_u: int) -> CommandResult:
 	d.location = &"mounted"
 	d.rack_id = rack.id
 	d.rack_u = first_u
+	d.used = true
 	_emit(&"device_mounted", {"device_id": d.id, "rack_id": rack.id, "u": first_u})
 	_refresh()
 	return CommandResult.success(tr("%s montado en la U%d.") % [d.display_name(), first_u])
@@ -594,7 +649,7 @@ func cable_route(cable_id: int) -> Dictionary:
 		_route_cache_version = _state_version
 	if not _route_cache.has(cable_id):
 		var ends: Dictionary = cable_ends.get(cable_id, {"a": "", "b": ""})
-		_route_cache[cable_id] = route_between(ends["a"], ends["b"]) if ends["b"] != "" else {"ok": false, "reason": "", "length": 0.0}
+		_route_cache[cable_id] = route_between(ends["a"], ends["b"], _cable_length(cable_id)) if ends["b"] != "" else {"ok": false, "reason": "", "length": 0.0}
 	return _route_cache[cable_id]
 
 
@@ -605,7 +660,10 @@ func cable_route(cable_id: int) -> Dictionary:
 ## Between two devices of one rack the cable goes through the rack; otherwise each end goes from
 ## its socket down to the floor next to its device (rack: down a post) and the floor part goes
 ## around furniture, floor devices and the delivery zone.
-func route_between(ref_a: String, ref_b: String) -> Dictionary:
+## The floor part is the tidy way (CableRouter: along walls and furniture, at right angles). If
+## that is longer than `max_length` (the cable), the most compact way is used when it is shorter
+## ("compact": true): a person with a short cable takes the shorter way, still tidy and clear.
+func route_between(ref_a: String, ref_b: String, max_length: float = INF) -> Dictionary:
 	var da := get_device(PortRef.device_id(ref_a))
 	var db := get_device(PortRef.device_id(ref_b))
 	if da == null or db == null or _floor_object(da) == null or _floor_object(db) == null:
@@ -617,11 +675,33 @@ func route_between(ref_a: String, ref_b: String) -> Dictionary:
 	var end_a := _cable_end(da, ga, _center2(_floor_object(db)))
 	var end_b := _cable_end(db, gb, end_a["exit"])
 	end_a = _cable_end(da, ga, end_b["exit"])
-	var floor_path := _cable_router().find_path(end_a["exit"], end_b["exit"], _floor_device_rects())
+	var rects := _floor_device_rects()
+	var floor_path := _cable_router().find_path(end_a["exit"], end_b["exit"], rects)
 	if floor_path.is_empty():
 		return {"ok": false, "length": 0.0, "reason": tr("no hay por dónde llevarlo por el suelo entre %s y %s (muebles o equipos cierran el paso).") % [da.display_name(), db.display_name()]}
-	var total: float = end_a["drop"] + CableRouter.length_of(floor_path) + end_b["drop"] + CABLE_SLACK_M
-	return {"ok": true, "reason": "", "length": total, "same_rack": false, "floor": floor_path, "a": end_a, "b": end_b}
+	var ends: float = end_a["drop"] + end_b["drop"] + CABLE_SLACK_M
+	var total: float = ends + CableRouter.length_of(floor_path)
+	var compact := false
+	if total > max_length:
+		var short_path := _cable_router().find_path(end_a["exit"], end_b["exit"], rects, 1.0)
+		if not short_path.is_empty() and ends + CableRouter.length_of(short_path) < total - 0.005:
+			floor_path = short_path
+			total = ends + CableRouter.length_of(short_path)
+			compact = true
+	return {"ok": true, "reason": "", "length": total, "same_rack": false, "floor": floor_path, "a": end_a, "b": end_b, "compact": compact}
+
+
+func _cable_length(cable_id: int) -> float:
+	var cable := get_device(cable_id)
+	var spec := cable.definition.get_spec(CableSpec) as CableSpec if cable != null else null
+	return spec.length_m if spec != null else INF
+
+
+## The shortest length a cable between two ports needs (the compact way), or INF if there is no
+## way. For previews and estimates.
+func needed_length(ref_a: String, ref_b: String) -> float:
+	var route := route_between(ref_a, ref_b, 0.0)
+	return route["length"] if route["ok"] else INF
 
 
 ## Two devices of one rack. Same face: the cable runs in front of that face. Front <-> rear: it
@@ -655,11 +735,11 @@ func _rack_internal_route(rack: SimDevice, da: SimDevice, ga: PortDefinition, db
 
 func _cable_router() -> CableRouter:
 	if _router == null:
-		var rects: Array[Rect2] = []
-		rects.assign(cable_obstacles)
+		var keepout: Array[Rect2] = []
+		keepout.assign(door_zones)
 		if delivery_zone.has_area():
-			rects.append(delivery_zone) # kept free for the boxes
-		_router = CableRouter.new(room_bounds, rects)
+			keepout.append(delivery_zone) # kept free for the boxes
+		_router = CableRouter.new(room_bounds, cable_obstacles, obstacles, keepout, wall_trim_m)
 	return _router
 
 
@@ -829,25 +909,88 @@ func pending_cable() -> int:
 	return -1
 
 
-func connect_cable(cable_id: int, port_ref: String) -> CommandResult:
+## Read-only: why the cable cannot go into that socket now ("" if it can, length aside): the
+## socket must exist, be free and match the cable (RJ45 for network cables; for power, an outlet
+## at one end and a power inlet at the other), and the second end must be on another device.
+## The length is checked by cable_reach / connect_cable.
+func cable_port_problem(cable_id: int, port_ref: String) -> String:
 	var cable := get_device(cable_id)
 	var spec := cable.definition.get_spec(CableSpec) as CableSpec if cable != null else null
 	if spec == null or not (cable.location in [&"inventory", &"cabled"]):
-		return CommandResult.failure(tr("Elige un cable de tu inventario."))
+		return tr("Elige un cable de tu inventario.")
 	var ends: Dictionary = cable_ends.get(cable_id, {"a": "", "b": ""})
 	if ends["b"] != "":
-		return CommandResult.failure(tr("Este cable ya está conectado por los dos extremos."))
+		return tr("Este cable ya está conectado por los dos extremos.")
 	var target := get_device(PortRef.device_id(port_ref))
 	var group := target.definition.find_port_group(PortRef.group(port_ref)) if target != null else null
 	if group == null or PortRef.index(port_ref) >= group.count or not target.is_in_world():
-		return CommandResult.failure(tr("Ese puerto no existe."))
+		return tr("Ese puerto no existe.")
 	if port_cable.has(port_ref):
-		return CommandResult.failure(tr("Ese puerto ya tiene un cable."))
+		return tr("Ese puerto ya tiene un cable.")
 	var is_power_port := group.kind in [PortDefinition.Kind.POWER_C13, PortDefinition.Kind.POWER_C14]
 	if spec.media == &"copper" and group.kind != PortDefinition.Kind.RJ45:
-		return CommandResult.failure(tr("Es un cable de red (RJ45) y ese puerto no es RJ45."))
+		return tr("Es un cable de red (RJ45) y ese puerto no es RJ45.")
 	if spec.media == &"power" and not is_power_port:
-		return CommandResult.failure(tr("Es un cable de corriente: une una toma de la regleta con la entrada de alimentación de un equipo."))
+		return tr("Es un cable de corriente: une una toma de la regleta con la entrada de alimentación de un equipo.")
+	if ends["a"] == "":
+		return ""
+	var first: String = ends["a"]
+	if PortRef.device_id(first) == target.id:
+		return tr("Los dos extremos irían al mismo equipo.")
+	if spec.media == &"power":
+		var first_group := get_device(PortRef.device_id(first)).definition.find_port_group(PortRef.group(first))
+		if first_group.kind == group.kind:
+			if group.kind == PortDefinition.Kind.POWER_C13:
+				return tr("El otro extremo ya está en una toma: este tiene que ir a la entrada de alimentación de un equipo.")
+			return tr("El otro extremo ya está en la entrada de un equipo: este tiene que ir a una toma de la regleta.")
+	return ""
+
+
+## Read-only, for the second end of a cable with a loose end: whether it reaches `port_ref`.
+## {"ok", "length", "reason"}.
+func cable_reach(cable_id: int, port_ref: String) -> Dictionary:
+	var ends: Dictionary = cable_ends.get(cable_id, {"a": "", "b": ""})
+	if ends["a"] == "" or ends["b"] != "":
+		return {"ok": true, "length": 0.0, "reason": ""}
+	var length := _cable_length(cable_id)
+	var route := route_between(ends["a"], port_ref, length)
+	if not route["ok"]:
+		return {"ok": false, "length": 0.0, "reason": tr("No se puede conectar: %s") % route["reason"]}
+	if route["length"] > length:
+		return {"ok": false, "length": route["length"], "reason": tr("El cable no llega: por el suelo hacen falta unos %s m y este mide %s m.") % [metres_needed(route["length"]), metres(length, 0)]}
+	return {"ok": true, "length": route["length"], "reason": ""}
+
+
+## Read-only: free sockets in the room where the cable fits now (cable_port_problem == "").
+func compatible_ports(cable_id: int) -> Array[String]:
+	var result: Array[String] = []
+	for d: SimDevice in devices.values():
+		if not d.is_in_world():
+			continue
+		for ref: String in d.port_refs():
+			if not port_cable.has(ref) and cable_port_problem(cable_id, ref) == "":
+				result.append(ref)
+	return result
+
+
+## Gives up a cable being laid: its plugged end (if any) is unplugged and it goes back to the
+## inventory (ADR 0011). A cable plugged at both ends is not touched.
+func cancel_cable(cable_id: int) -> CommandResult:
+	var ends: Dictionary = cable_ends.get(cable_id, {})
+	if ends.is_empty():
+		return CommandResult.success("")
+	if ends["b"] != "":
+		return CommandResult.failure(tr("Ese cable ya está conectado por los dos extremos."))
+	return disconnect_port(ends["a"])
+
+
+func connect_cable(cable_id: int, port_ref: String) -> CommandResult:
+	var problem := cable_port_problem(cable_id, port_ref)
+	if problem != "":
+		return CommandResult.failure(problem)
+	var cable := get_device(cable_id)
+	var spec := cable.definition.get_spec(CableSpec) as CableSpec
+	var ends: Dictionary = cable_ends.get(cable_id, {"a": "", "b": ""})
 	if ends["a"] == "":
 		ends["a"] = port_ref
 		cable_ends[cable_id] = ends
@@ -856,19 +999,14 @@ func connect_cable(cable_id: int, port_ref: String) -> CommandResult:
 		_emit(&"cable_plugged", {"cable_id": cable_id, "port": port_ref})
 		return CommandResult.success(tr("Extremo conectado. Ahora conecta el otro extremo."))
 	var first: String = ends["a"]
-	if PortRef.device_id(first) == target.id:
-		return CommandResult.failure(tr("Los dos extremos irían al mismo equipo."))
-	if spec.media == &"power":
-		var first_group := get_device(PortRef.device_id(first)).definition.find_port_group(PortRef.group(first))
-		if first_group.kind == group.kind:
-			return CommandResult.failure(tr("Un cable de corriente une una toma de la regleta con la entrada de alimentación de un equipo."))
-	var route := route_between(first, port_ref)
+	var route := route_between(first, port_ref, spec.length_m)
 	if not route["ok"]:
 		return CommandResult.failure(tr("No se puede conectar: %s") % route["reason"])
 	if route["length"] > spec.length_m:
-		return CommandResult.failure(tr("El cable no llega: por el suelo hacen falta unos %s m y este mide %s m.") % [metres(route["length"]), metres(spec.length_m, 0)])
+		return CommandResult.failure(tr("El cable no llega: por el suelo hacen falta unos %s m y este mide %s m.") % [metres_needed(route["length"]), metres(spec.length_m, 0)])
 	ends["b"] = port_ref
 	port_cable[port_ref] = cable_id
+	cable.used = true
 	_refresh()
 	_emit(&"cable_connected", {"cable_id": cable_id})
 	if spec.media == &"power":
@@ -943,6 +1081,7 @@ func save_state() -> Dictionary:
 		"orders": order_list,
 		"cables": cable_list,
 		"mission": mission.save_state() if mission != null else {},
+		"economy": economy.save_state(),
 	}
 
 
@@ -979,6 +1118,14 @@ func load_state(data: Dictionary) -> void:
 			groups.append(ids)
 		orders.append({"id": int(saved["id"]), "eta": float(saved["eta"]), "groups": groups,
 			"total": int(saved["total"]), "delivered": bool(saved["delivered"])})
+	# Saves of version 1 do not say what was bought: everything in an order was.
+	var saved_devices: Array = data["devices"]
+	if not saved_devices.is_empty() and not (saved_devices[0] as Dictionary).has("bought"):
+		for order: Dictionary in orders:
+			for group: Array in order["groups"]:
+				for device_id: int in group:
+					if devices.has(device_id):
+						(devices[device_id] as SimDevice).bought = true
 	for saved: Dictionary in data["cables"]:
 		var cable_id := int(saved["cable"])
 		var ends := {"a": String(saved["a"]), "b": String(saved["b"])}
@@ -988,6 +1135,8 @@ func load_state(data: Dictionary) -> void:
 			port_cable[ends["b"]] = cable_id
 	var saved_mission: Dictionary = data.get("mission", {})
 	mission = MissionTracker.from_state(saved_mission) if not saved_mission.is_empty() else null
+	economy = Economy.new(economy.rules)
+	economy.load_state(data.get("economy", {}))
 	_gather_packages() # boxes always wait in one stack at the (current) delivery spot
 	_emit(&"state_loaded", {})
 

@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="ShopListing" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/shop_listing.gd" id="1_krjky"]
+
+[resource]
+script = ExtResource("1_krjky")
+item_id = &"cable_cat6_1m"
+title = "Cablecraft Cat6 1 m — Latiguillo de red RJ45 Cat6 corto, para unir equipos del mismo rack"
+bullets = PackedStringArray("Conectores RJ45 en los dos extremos.", "Categoría 6: enlaces Gigabit (1 Gb/s) sin problemas.", "1 m: perfecto entre el switch y un servidor del mismo rack.", "Funda azul, fácil de distinguir de los cables de corriente.")
+description = "El latiguillo más práctico dentro de un rack: lo bastante largo para ir de un equipo a otro sin que sobre cable colgando.
+
+Para llegar a otro equipo de la habitación (el router, el PC) necesitarás uno más largo: el cable va por el suelo, pegado a paredes y muebles, y eso suma metros."
+reviews = Array[Dictionary]([{
+"author": "Iván R.",
+"date": "hace 1 semana",
+"stars": 5,
+"text": "Une el servidor con el switch sin que sobre nada.",
+"title": "Justo para el rack",
+"verified": true
+}, {
+"author": "Lucía P.",
+"date": "hace 3 semanas",
+"stars": 4,
+"text": "Dentro del rack, ideal. Para ir hasta el router no llega, lógicamente.",
+"title": "Corto, como debe ser",
+"verified": true
+}, {
+"author": "Raúl T.",
+"date": "hace 2 meses",
+"stars": 5,
+"text": "Compré varios y todos funcionan a 1 Gb/s.",
+"title": "Buen precio",
+"verified": true
+}])

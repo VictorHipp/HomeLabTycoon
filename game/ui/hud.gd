@@ -6,9 +6,21 @@ extends CanvasLayer
 
 signal inventory_item_pressed(device_id: int)
 signal menu_requested
+signal toast_shown(ok: bool)
+
+const FLOAT_SECONDS := 2.2
 
 var world: SimWorld
+var _root: Control
 var _credits: Label
+var _income: Label
+var _top_panel: PanelContainer
+var _cable_panel: PanelContainer
+var _cable_title: Label
+var _cable_text: Label
+var _cable_texts: VBoxContainer
+var _cable_cancel: Button
+var _cable_cancel_callback: Callable = Callable()
 var _level: Label
 var _xp_bar: ProgressBar
 var _clock: Label
@@ -35,17 +47,26 @@ func setup(sim_world: SimWorld) -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+	_root = root
 
 	# Top-left: economy, level, time.
 	var top := PanelContainer.new()
 	top.add_theme_stylebox_override("panel", UiStyle.panel())
 	top.position = Vector2(12, 12)
+	_top_panel = top
 	root.add_child(top)
 	var top_row := HBoxContainer.new()
 	top_row.add_theme_constant_override("separation", 14)
 	top.add_child(top_row)
+	var money_box := VBoxContainer.new()
+	money_box.add_theme_constant_override("separation", 0)
 	_credits = UiStyle.label("", 18, UiStyle.MUSTARD)
-	top_row.add_child(_credits)
+	_credits.mouse_filter = Control.MOUSE_FILTER_PASS
+	money_box.add_child(_credits)
+	_income = UiStyle.label("", 12, UiStyle.OK)
+	_income.mouse_filter = Control.MOUSE_FILTER_PASS
+	money_box.add_child(_income)
+	top_row.add_child(money_box)
 	var level_box := VBoxContainer.new()
 	_level = UiStyle.label("", 14)
 	level_box.add_child(_level)
@@ -99,11 +120,36 @@ func setup(sim_world: SimWorld) -> void:
 	bottom.offset_bottom = -10
 	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bottom.alignment = BoxContainer.ALIGNMENT_END
+	bottom.grow_vertical = Control.GROW_DIRECTION_BEGIN # taller content (cable guide) grows upwards
 	root.add_child(bottom)
 	_toast = UiStyle.label("", 17)
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	bottom.add_child(_toast)
+	# Guide of the cable being laid (CableTool): what to look for, step 1 or 2, and how to cancel.
+	_cable_panel = PanelContainer.new()
+	var cable_box_style := UiStyle.panel(Color(UiStyle.INK, 0.95), 8, 10)
+	cable_box_style.border_color = UiStyle.HIGHLIGHT
+	cable_box_style.set_border_width_all(2)
+	_cable_panel.add_theme_stylebox_override("panel", cable_box_style)
+	_cable_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_cable_panel.visible = false
+	bottom.add_child(_cable_panel)
+	var cable_row := HBoxContainer.new()
+	cable_row.add_theme_constant_override("separation", 14)
+	_cable_panel.add_child(cable_row)
+	_cable_texts = VBoxContainer.new()
+	var cable_texts := _cable_texts
+	cable_texts.custom_minimum_size = Vector2(620, 0)
+	cable_row.add_child(cable_texts)
+	_cable_title = UiStyle.label("", 16, UiStyle.HIGHLIGHT)
+	cable_texts.add_child(_cable_title)
+	_cable_text = UiStyle.label("", 14)
+	_cable_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	cable_texts.add_child(_cable_text)
+	_cable_cancel = UiStyle.button(TranslationServer.translate("Cancelar cable"), _on_cable_cancel)
+	_cable_cancel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cable_row.add_child(_cable_cancel)
 	_tool = UiStyle.label("", 15, UiStyle.HIGHLIGHT)
 	_tool.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART # long placement previews at 1280 px
 	bottom.add_child(_tool)
@@ -147,6 +193,16 @@ func _process(delta: float) -> void:
 
 func refresh() -> void:
 	_credits.text = TranslationServer.translate("%d créditos") % world.credits
+	var rate := world.economy.passive_rate(world)
+	var left := world.economy.passive_left_today(world.time_minutes)
+	if rate <= 0:
+		_income.text = ""
+	elif left <= 0:
+		_income.text = TranslationServer.translate("ingresos pasivos: tope de hoy alcanzado")
+	else:
+		_income.text = TranslationServer.translate("+%d cr/h en línea") % rate
+	_credits.tooltip_text = TranslationServer.translate("Tus créditos. El detalle de ingresos y gastos está en el ordenador: aplicación «Mi cuenta».")
+	_income.tooltip_text = TranslationServer.translate("Ingresos pasivos: tus servidores encendidos y accesibles desde el PC pagan %d créditos por hora de juego, hasta %d al día (hoy quedan %d).") % [rate, world.economy.rules.passive_daily_cap, left]
 	var progress := world.level_progress()
 	_level.text = TranslationServer.translate("Nivel %d · %d/%d XP") % [world.level(), progress[0], progress[1]]
 	_xp_bar.max_value = progress[1]
@@ -171,11 +227,14 @@ func _refresh_mission() -> void:
 	var reqs := tracker.definition.requirements
 	for i: int in reqs.size():
 		var done := i < tracker.status.size() and tracker.status[i]
-		var line := UiStyle.label(("✓ " if done else "○ ") + TranslationServer.translate(reqs[i].text), 14, UiStyle.OK if done else UiStyle.BONE)
+		var text := ("✓ " if done else "○ ") + TranslationServer.translate(reqs[i].text)
+		if reqs[i].xp > 0:
+			text += "  " + (TranslationServer.translate("(+%d XP ganados)") if tracker.rewarded[i] else TranslationServer.translate("(+%d XP)")) % reqs[i].xp
+		var line := UiStyle.label(text, 14, UiStyle.OK if done else UiStyle.BONE)
 		line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		line.custom_minimum_size = Vector2(340, 0)
 		_mission_list.add_child(line)
-	_mission_list.add_child(UiStyle.label(TranslationServer.translate("Recompensa: %d créditos y %d XP") % [tracker.definition.reward_credits, tracker.definition.reward_xp], 13, UiStyle.MUSTARD))
+	_mission_list.add_child(UiStyle.label(TranslationServer.translate("Al completarla: %d créditos y %d XP · %d XP en total") % [tracker.definition.reward_credits, tracker.definition.reward_xp, tracker.total_xp()], 13, UiStyle.MUSTARD))
 
 
 func _refresh_inventory() -> void:
@@ -216,6 +275,60 @@ func show_toast(text: String, ok: bool = true) -> void:
 	_toast.add_theme_color_override("font_color", UiStyle.BONE if ok else UiStyle.BAD)
 	_toast_time = 5.0
 	_toast.modulate.a = 1.0
+	toast_shown.emit(ok)
+
+
+## "+600 cr", "−808 cr", "+10 XP": floats up from the credits and fades, so every change of
+## credits or XP is seen with its sign.
+func float_delta(text: String, positive: bool) -> void:
+	var label := UiStyle.label(text, 18, UiStyle.OK if positive else UiStyle.BAD)
+	label.add_theme_color_override("font_outline_color", UiStyle.INK)
+	label.add_theme_constant_override("outline_size", 6)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(label)
+	var stacked := 0
+	for child: Node in _root.get_children():
+		if child.has_meta("float_delta"):
+			stacked += 1
+	label.set_meta("float_delta", true)
+	# To the right of the top bar, so it never covers a panel; several stack downwards.
+	label.position = Vector2(_top_panel.get_global_rect().end.x + 14.0, 16.0 + 26.0 * stacked)
+	var tween := label.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y + 22.0, FLOAT_SECONDS)
+	tween.tween_property(label, "modulate:a", 0.0, FLOAT_SECONDS).set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(label.queue_free)
+
+
+# ------------------------------------------------------------- cable guide --
+
+## `compact`: in close-ups the panel is narrow and sits at the bottom left, so it never covers
+## the sockets in the middle of the screen; in the overview it is wide and centred.
+func show_cable_panel(title: String, text: String, cancel: Callable, compact: bool = false) -> void:
+	_cable_title.text = title
+	_cable_text.text = text
+	_cable_cancel_callback = cancel
+	_cable_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if compact else Control.SIZE_SHRINK_CENTER
+	_cable_texts.custom_minimum_size = Vector2(250 if compact else 620, 0)
+	_cable_panel.visible = true
+
+
+func hide_cable_panel() -> void:
+	_cable_panel.visible = false
+	_cable_cancel_callback = Callable()
+
+
+func cable_panel_visible() -> bool:
+	return _cable_panel.visible
+
+
+func cable_panel_text() -> String:
+	return _cable_title.text + " · " + _cable_text.text
+
+
+func _on_cable_cancel() -> void:
+	if _cable_cancel_callback.is_valid():
+		_cable_cancel_callback.call()
 
 
 func set_hint(text: String) -> void:

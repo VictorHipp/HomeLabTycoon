@@ -16,7 +16,7 @@ const ZONE_REAR_ALPHA := 0.22
 
 var session: GameSession
 var mode: Mode = Mode.OVERVIEW
-var selected_cable: int = -1
+var cable_tool: CableTool ## The cable being laid, step by step (guide, glows, cancel).
 
 var _target_kind: StringName = &""
 var _target_id: int = -1
@@ -60,7 +60,15 @@ func setup(game: GameSession) -> void:
 	session.character.unreachable.connect(_on_unreachable)
 	session.character.blocked.connect(_on_blocked)
 	session.hud.set_hint(TranslationServer.translate(HINT_OVERVIEW))
+	cable_tool = CableTool.new()
+	add_child(cable_tool)
+	cable_tool.setup(session)
 	_update_tool_text()
+
+
+## Device (or rack) shown in the current close-up, or -1.
+func closeup_device() -> int:
+	return _closeup_device if mode == Mode.CLOSEUP else -1
 
 
 # ------------------------------------------------------------------- input --
@@ -122,8 +130,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_update_ghost()
 	if start_mode in [Mode.OVERVIEW, Mode.APPROACH] and event.is_action_pressed(&"close_interaction"):
 		get_viewport().set_input_as_handled()
-		if selected_cable >= 0:
-			selected_cable = -1 # first Esc drops the chosen cable
+		if cable_tool.active():
+			# First Esc gives up the cable being laid (its plugged end too: ADR 0011).
+			cable_tool.cancel(TranslationServer.translate("Cable cancelado: ha vuelto al inventario."))
 			_update_tool_text()
 		else:
 			session.menu.open()
@@ -160,8 +169,13 @@ func _ray(screen_pos: Vector2, mask: int, areas: bool = false) -> Dictionary:
 func _click_world(screen_pos: Vector2) -> void:
 	var hit := _ray(screen_pos, Layers.WORLD_PICK)
 	if hit.is_empty():
+		session.click_fx.reject() # nothing there: the ring under the cursor turns red
 		return
 	var collider := hit["collider"] as Node
+	# An object that can be used lights up for a moment (the floor shows a ring where the
+	# character goes instead).
+	if collider.has_meta("computer_id") or collider.has_meta("package_stack") or collider.has_meta("device_id"):
+		session.click_fx.flash_node(collider.get_parent() as Node3D)
 	if collider.has_meta("computer_id"):
 		_begin(&"computer", collider.get_meta("computer_id"))
 	elif collider.has_meta("package_stack"):
@@ -175,8 +189,8 @@ func _click_world(screen_pos: Vector2) -> void:
 	else:
 		_approach_token += 1
 		mode = Mode.OVERVIEW
-		if session.character.move_to(hit["position"]):
-			session.spawn_click_marker(hit["position"])
+		var ok := session.character.move_to(hit["position"])
+		session.spawn_click_marker(hit["position"], ok)
 
 
 ## Right click in the overview: move a placed rack directly (no need to walk to it, so a rack
@@ -249,6 +263,7 @@ func _on_arrived() -> void:
 	match _target_kind:
 		&"package":
 			var world := session.world
+			var note := cable_tool.interrupt(TranslationServer.translate("abrir una caja"))
 			var r := world.open_package(_target_id if world.packages.has(_target_id) else world.top_package_id())
 			var left := world.packages.size()
 			var text: String = r.message
@@ -259,6 +274,8 @@ func _on_arrived() -> void:
 					text += " " + TranslationServer.translate("Queda 1 caja.")
 				else:
 					text += " " + TranslationServer.translate("Quedan %d cajas.") % left
+			if note != "":
+				text = note + " " + text
 			session.hud.show_toast(text, r.ok)
 			mode = Mode.OVERVIEW
 		&"computer":
@@ -276,6 +293,9 @@ func _on_arrived() -> void:
 ## the camera goes to the screen. Input waits in TRANSITION meanwhile.
 func _sit_and_use_computer() -> void:
 	mode = Mode.TRANSITION
+	var note := cable_tool.interrupt(TranslationServer.translate("ponerte con el ordenador"))
+	if note != "":
+		session.hud.show_toast(note)
 	await session.character.sit_down(session.room.chair, deg_to_rad(RoomView.CHAIR_REST_YAW))
 	_focus(session.screen_anchor(), Mode.SCREEN)
 
@@ -431,7 +451,7 @@ func _disconnect_all(rack_id: int) -> void:
 		for ref: String in d.port_refs():
 			if world.port_cable.has(ref) and world.disconnect_port(ref).ok:
 				count += 1
-	selected_cable = -1
+	cable_tool.cancel()
 	session.hud.show_toast(TranslationServer.translate("%d cables desconectados y devueltos al inventario.") % count)
 	_update_tool_text()
 	refresh_panel()
@@ -476,7 +496,10 @@ func _hover_closeup(screen_pos: Vector2) -> void:
 	_highlight.scale = Vector3.ONE
 	_highlight.visible = true
 	var d := session.world.get_device(PortRef.device_id(_hover_port))
-	session.hud.set_tool_text("%s — %s" % [d.display_name(), _port_text(_hover_port)])
+	var text := "%s — %s" % [d.display_name(), _port_text(_hover_port)]
+	if cable_tool.active() and not session.world.port_cable.has(_hover_port):
+		text += "\n" + cable_tool.port_hint(_hover_port)
+	session.hud.set_tool_text(text)
 
 
 func _click_closeup(screen_pos: Vector2) -> void:
@@ -494,19 +517,13 @@ func _click_closeup(screen_pos: Vector2) -> void:
 	if hit.is_empty():
 		return
 	var ref: String = (hit["collider"] as Area3D).get_meta("port_ref")
-	var cable := session.world.pending_cable()
-	if cable < 0:
-		cable = selected_cable
-	if cable < 0:
+	if not cable_tool.active():
 		if session.world.port_cable.has(ref):
 			session.hud.show_toast(TranslationServer.translate("Este puerto ya tiene cable. Clic derecho para desconectarlo."))
 		else:
 			session.hud.show_toast(TranslationServer.translate("Elige primero un cable en el inventario (abajo)."), false)
 		return
-	var result := session.world.connect_cable(cable, ref)
-	session.hud.show_toast(result.message, result.ok)
-	if result.ok and session.world.pending_cable() < 0:
-		selected_cable = -1
+	cable_tool.click_port(ref)
 	_update_tool_text()
 	refresh_panel()
 
@@ -525,6 +542,9 @@ func _right_click_closeup(screen_pos: Vector2) -> void:
 
 func _start_mount_mode(device_id: int) -> void:
 	_end_mount_mode()
+	var note := cable_tool.interrupt(TranslationServer.translate("montar un equipo"))
+	if note != "":
+		session.hud.show_toast(note)
 	if _rack_rear:
 		_rack_rear = false
 		session.director.switch_anchor(session.rack_anchor(_closeup_device, false))
@@ -560,16 +580,19 @@ func _on_inventory_item(device_id: int) -> void:
 				session.hud.show_toast(TranslationServer.translate("Se monta en el rack: haz clic en el rack y elige «Montar»."))
 			return
 	if d.definition.get_spec(CableSpec) != null:
-		selected_cable = device_id
+		if mode == Mode.PLACEMENT:
+			_cancel_placement()
+		cable_tool.choose(device_id) # the guide panel says what to look for
 		_update_tool_text()
-		if mode != Mode.CLOSEUP:
-			session.hud.show_toast(TranslationServer.translate("Cable elegido. Acércate a un equipo (clic en él) y haz clic en sus puertos."))
 		return
 	session.hud.show_toast(d.definition.description)
 
 
 func _start_placement(d: SimDevice, moving: bool = false) -> void:
 	_cancel_placement()
+	var note := cable_tool.interrupt(TranslationServer.translate("mover el rack") if moving else TranslationServer.translate("colocar un objeto"))
+	if note != "":
+		session.hud.show_toast(note)
 	_ghost_device = d.id
 	_ghost_yaw = d.yaw_degrees if moving else 0.0
 	_ghost_pos = d.position if moving else Vector3.ZERO
@@ -661,9 +684,9 @@ func _update_ghost() -> void:
 			if not power.is_empty() and power["needed"] == INF:
 				text += "\n" + TranslationServer.translate("⚠ Desde aquí no hay por dónde llevar un cable de corriente hasta la regleta.")
 			elif not power.is_empty() and power["needed"] > power["longest"]:
-				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %s m de cable de corriente y el más largo de la tienda mide %s m.") % [SimWorld.metres(power["needed"]), SimWorld.metres(power["longest"], 0)]
+				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %s m de cable de corriente y el más largo de la tienda mide %s m.") % [SimWorld.metres_needed(power["needed"]), SimWorld.metres(power["longest"], 0)]
 			elif not power.is_empty() and power["needed"] > power["included"]:
-				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %s m de cable de corriente; el que traen mide %s m (en la tienda hay de %s m).") % [SimWorld.metres(power["needed"]), SimWorld.metres(power["included"], 0), SimWorld.metres(power["longest"], 0)]
+				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %s m de cable de corriente; el que traen mide %s m (en la tienda hay de %s m).") % [SimWorld.metres_needed(power["needed"]), SimWorld.metres(power["included"], 0), SimWorld.metres(power["longest"], 0)]
 	session.hud.set_tool_text(text)
 
 
@@ -711,6 +734,9 @@ func _cancel_placement() -> void:
 
 func _open_console(device_id: int) -> void:
 	_close_console()
+	var note := cable_tool.interrupt(TranslationServer.translate("abrir la consola"))
+	if note != "":
+		session.hud.show_toast(note)
 	var d := session.world.get_device(device_id)
 	_console = CanvasLayer.new()
 	_console.layer = 12
@@ -764,12 +790,8 @@ func _is_rack(device_id: int) -> bool:
 	return d != null and d.definition.get_spec(RackSpec) != null
 
 
+## The line above the inventory: placement previews and hovered sockets. The cable being laid has
+## its own guide panel (CableTool).
 func _update_tool_text() -> void:
-	var world := session.world
-	var pending := world.pending_cable()
-	if pending >= 0:
-		session.hud.set_tool_text(TranslationServer.translate("Cable con un extremo suelto (%s): conecta el otro extremo en otro puerto. Clic derecho en el extremo conectado para retirarlo.") % world.get_device(pending).definition.model)
-	elif selected_cable >= 0:
-		session.hud.set_tool_text(TranslationServer.translate("Cable elegido: %s — clic en un puerto (Esc para soltarlo)") % world.get_device(selected_cable).definition.model)
-	elif mode != Mode.PLACEMENT:
+	if mode != Mode.PLACEMENT:
 		session.hud.set_tool_text("")

@@ -17,7 +17,10 @@ extends Node
 ##              (res://assets/manual/*.png).
 ## Also checked: camera drags, menu (Controls, manual, save / load, also while seated), sitting
 ## and standing up repeatedly, walking through narrow spaces, the planted foot not sliding,
-## deliveries in several orders, invalid placements, every drawn cable against the colliders.
+## deliveries in several orders, invalid placements, every drawn cable against the colliders
+## with its radius, no object inside another, click rings (red on a useless click), the shop
+## product page and basket, the cable guide (steps, glowing sockets, arrows) and its
+## cancellation by other work or Esc, passive income, "Mi cuenta" and second-hand selling.
 ## Every scenario must end with the mission completed.
 
 const STEP_TIMEOUT := 25.0
@@ -26,8 +29,8 @@ const MANUAL_DIR := "res://assets/manual"
 const MANUAL_SIZE := Vector2i(1280, 720)
 const MARK := Color("#3CC8D8")
 const POCKET := Vector3(-0.35, 0.0, -0.56) ## Floor in front of the PC tower, closed by BLOCK_SPOT.
-const GOOD_SPOT := Vector3(0.9, 0.0, 0.5)
-const GOOD_YAW := 90.0 ## Rear (power sockets) towards the room: the 3 m cords reach the strip.
+const GOOD_SPOT := Vector3(0.2, 0.0, 0.6)
+const GOOD_YAW := 0.0 ## Front to the room, rear (power sockets) towards the desk: the 3 m cords reach the strip.
 const WALL_SPOT := Vector3(1.2, 0.0, 0.5)
 const FAR_SPOT := Vector3(1.45, 0.0, 0.65)
 const BLOCK_SPOT := Vector3(-0.35, 0.0, 0.0)
@@ -128,6 +131,8 @@ func _steps() -> void:
 		return
 	await _shot("final")
 	await _manual("17_cables_suelo")
+	if scenario in ["basic", "manual"] and not await _economy():
+		return
 	match scenario:
 		"wall":
 			await _epilogue_pick_up(rack)
@@ -138,6 +143,64 @@ func _steps() -> void:
 			await _chair_blocked()
 		"manual":
 			await _manual_epilogue()
+
+
+## After the mission: the server earns passive income (seen in the HUD, paid on the hour), the
+## account lists every movement, and the second-hand market buys the spare cable for less.
+func _economy() -> bool:
+	_note("10b. Economía: ingresos pasivos, Mi cuenta y Segunda mano")
+	await _frames(10)
+	var rate := s.world.economy.passive_rate(s.world)
+	_note("  ingresos pasivos: %d cr/h · HUD «%s»" % [rate, s.hud._income.text])
+	if rate <= 0 or not s.hud._income.text.contains("cr/h"):
+		_fail("con el servidor en línea no hay ingresos pasivos o el HUD no los muestra")
+	var before := s.world.credits
+	if not await _press(s.hud._speed_buttons[4.0], "×4"):
+		return false
+	var paid := await _wait(func() -> bool: return s.world.credits > before, 40.0)
+	await _press(s.hud._speed_buttons[1.0], "×1")
+	if not paid:
+		_fail("en una hora de juego el servidor en línea no pagó nada")
+	_note("  cobrado: %d -> %d cr" % [before, s.world.credits])
+	await _shot("ingreso_pasivo")
+	await _manual("25_ingresos", [_hud_rect(s.hud._credits), _hud_rect(s.hud._income)])
+	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	if not await _wait_mode(InteractionManager.Mode.SCREEN):
+		return false
+	if not await _press(_find_button(s.screen, "Mi cuenta"), "Mi cuenta"):
+		return false
+	await _frames(5)
+	var ledger := s.screen.account.find_child("Ledger", true, false) as GridContainer
+	var rows := ledger.get_child_count() / 4 - 1 if ledger != null else 0
+	_note("  Mi cuenta: %d movimientos" % rows)
+	if rows < 4:
+		_fail("Mi cuenta no lista los movimientos (%d)" % rows)
+	await _shot("mi_cuenta")
+	await _manual("26_mi_cuenta", [ledger.get_global_rect() if ledger != null else Rect2()])
+	if not await _press(_find_button(s.screen, "Segunda mano"), "Segunda mano"):
+		return false
+	await _frames(5)
+	var spare := _inventory(&"cable_cat6_3m")
+	if spare == null:
+		return false
+	var row := s.screen.market.find_child("Sell_%d" % spare.id, true, false)
+	await _manual("27_segunda_mano", [_rect_of(_find_button(row, "Vender")) if row != null else Rect2()])
+	if row == null or not await _press(_find_button(row, "Vender"), "Vender"):
+		return false
+	await _frames(3)
+	row = s.screen.market.find_child("Sell_%d" % spare.id, true, false)
+	before = s.world.credits
+	if row == null or not await _press(_find_button(row, "Sí, vender"), "Sí, vender"):
+		return false
+	var expected := s.world.catalog.get_item(&"cable_cat6_3m").price * s.world.economy.rules.resale_unused_percent / 100
+	_note("  venta: %s" % s.screen.market.status_text())
+	if s.world.credits - before != expected or spare.location != &"sold":
+		_fail("la venta no pagó %d cr (%d -> %d)" % [expected, before, s.world.credits])
+	await _shot("segunda_mano_vendido")
+	_key(KEY_ESCAPE)
+	await _wait_mode(InteractionManager.Mode.OVERVIEW)
+	await _wait(func() -> bool: return not s.character.busy, 5.0)
+	return true
 
 
 ## wall, after the mission: the panel buttons that undo everything (the mission stays completed).
@@ -191,6 +254,13 @@ func _camera_and_walk() -> bool:
 	await _click_screen(s.camera.unproject_position(Vector3(0.6, 0.0, 0.9)), MOUSE_BUTTON_RIGHT)
 	if s.interaction.mode != InteractionManager.Mode.OVERVIEW or s.hud._toast.text != toast_before:
 		_fail("un clic derecho en el suelo hizo algo")
+	if s.click_fx.ring_count() == 0:
+		_fail("el clic no dejó ningún anillo bajo el cursor")
+	# A click on nothing (outside the room): the ring turns red with a cross.
+	await _click_screen(Vector2(30.0, s.get_viewport().get_visible_rect().size.y * 0.5))
+	if not s.click_fx.last_ring_rejected():
+		_fail("un clic en el vacío no se marcó como inútil")
+	await _shot("clic_en_el_vacio")
 	# A long straight walk: the foot on the floor must not slide (measured on the real model).
 	var target := Vector3(-1.2, 0.0, 0.85)
 	var start := s.character.global_position
@@ -246,28 +316,48 @@ func _shop() -> bool:
 		return false
 	await _frames(10)
 	await _shot("escritorio")
-	# wall: two orders in a row (several deliveries); manual: one cable more for its last pictures.
+	if not await _shop_product_page():
+		return false
+	# wall: two orders in a row (several deliveries) and the long power cords that spot needs;
+	# manual: one cable more for its last pictures; basic: a cable to sell later.
 	var orders: Array = [SHOPPING]
 	if scenario == "wall":
-		orders = [[&"rack_12u_open", &"switch_16p_1u"], [&"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_5m"]]
-	elif scenario == "manual":
+		orders = [[&"rack_12u_open", &"switch_16p_1u"], [&"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_5m", &"power_cord_5m", &"power_cord_5m"]]
+	elif scenario in ["manual", "basic"]:
 		var more: Array[StringName] = SHOPPING.duplicate()
-		more.append(&"cable_cat6_1m")
+		more.append(&"cable_cat6_3m") # the spare cable sold second hand after the mission
+		if scenario == "manual":
+			more.append(&"cable_cat6_1m")
 		orders = [more]
+	var spent := 0
+	var before := s.world.credits
 	for order: Array in orders:
+		if s.screen.shop.page != &"list" and not await _press(_find_link(s.screen.shop, "◀ Seguir comprando"), "Seguir comprando"):
+			return false
 		for item: StringName in order:
 			var def := s.world.catalog.get_item(item)
-			if not await _press(_shop_add_button(def.display_name()), "Añadir " + def.display_name()):
+			if not await _press(_shop_add_button(item), "Añadir a la cesta: " + def.display_name()):
 				return false
+			spent += def.price
 			await _frames(3)
-		await _shot("tienda_carrito")
-		await _manual("06_tienda", [_rect_of(_shop_add_button(s.world.catalog.get_item(&"rack_12u_open").display_name())), _rect_of(_find_button(s.screen, "Comprar"))])
-		if not await _press(_find_button(s.screen, "Comprar"), "Comprar"):
+		await _shot("tienda_catalogo")
+		await _manual("06_tienda", [_rect_of(_shop_add_button(&"rack_12u_open")), _rect_of(s.screen.shop._cart_button)])
+		if not await _press(s.screen.shop._cart_button, "Cesta"):
 			return false
-		_note("  compra: " + s.screen._message.text)
+		await _frames(5)
+		await _shot("tienda_cesta")
+		var pay := s.screen.shop.find_child("Pay", true, false) as Button
+		await _manual("06c_cesta", [_rect_of(pay)])
+		if not await _press(pay, "Tramitar pedido"):
+			return false
+		_note("  compra: " + s.screen.shop.status_text())
 	if s.world.orders.size() != orders.size():
 		_fail("se esperaban %d pedidos y hay %d" % [orders.size(), s.world.orders.size()])
 		return false
+	if s.world.credits != before - spent:
+		_fail("el saldo no bajó lo que costó el pedido: %d -> %d (%d)" % [before, s.world.credits, spent])
+	var floats := s.hud._root.get_children().filter(func(n: Node) -> bool: return n.has_meta("float_delta"))
+	_note("  saldo %d -> %d · avisos flotantes en el HUD: %d" % [before, s.world.credits, floats.size()])
 	if not await _press(_find_button(s.screen, "Pedidos"), "Pedidos"):
 		return false
 	await _shot("pedidos")
@@ -441,16 +531,29 @@ func _power(rack: SimDevice) -> bool:
 	if not await _ensure_rack_closeup(rack):
 		return false
 	await _rack_side(true)
-	if not await _choose_cable(&"power_cord_3m"):
+	if not await _choose_cable(_power_cord()):
 		return false
 	if scenario == "manual":
 		var psu := s.camera.unproject_position((s.device_views[sw.id] as DeviceView).port_areas[PortRef.make(sw.id, &"psu", 0)].global_position)
 		_motion(psu)
 		await _frames(4)
 		await _manual("16_puertos", [s.hud._tool.get_global_rect(), _hud_rect(s.hud._inventory_row)], [psu])
+	_check_guide("Paso 1 de 2", "toma libre de la regleta")
+	await _frames(3)
+	if s.interaction.cable_tool._glows.is_empty():
+		_fail("en la vista cercana no brilla ningún puerto compatible")
 	await _click_port(PortRef.make(sw.id, &"psu", 0))
+	await _frames(2) # the guide follows on the next frame
+	_check_guide("Paso 2 de 2", "toma libre de la regleta")
 	await _shot("cable_corriente_pendiente")
+	await _manual("16b_cable_guiado", [s.hud._cable_panel.get_global_rect()])
 	await _leave()
+	await _frames(5)
+	_note("  guía en la vista general: %d flechas sobre equipos con tomas compatibles, en %s" % [s.interaction.cable_tool._arrows.size(), ", ".join(PackedStringArray(s.interaction.cable_tool._arrows.map(func(a: Node3D) -> String: return _v(a.global_position))))])
+	if s.interaction.cable_tool._arrows.is_empty():
+		_fail("en la vista general no se marca ningún equipo con tomas compatibles")
+	await _shot("cable_flechas")
+	await _manual("16c_cable_flechas", [s.hud._cable_panel.get_global_rect()])
 	if not await _open(&"device", strip.id):
 		return false
 	await _manual("18_regleta", [], [s.camera.unproject_position((s.device_views[strip.id] as DeviceView).port_areas[PortRef.make(strip.id, &"outlet", 2)].global_position)])
@@ -459,9 +562,14 @@ func _power(rack: SimDevice) -> bool:
 	if not s.world.is_powered(sw):
 		_fail("el switch no recibe corriente: «%s»" % s.hud._toast.text)
 		return false
+	await _frames(3)
+	if s.hud.cable_panel_visible():
+		_fail("con los dos extremos conectados, la guía del cable sigue en pantalla")
+	if scenario == "basic" and not await _cable_cancelled_by_other_work(strip):
+		return false
 
 	_note("6. Corriente del servidor (regleta -> trasera del rack) y botón Encender")
-	if not await _choose_cable(&"power_cord_3m"):
+	if not await _choose_cable(_power_cord()):
 		return false
 	await _click_port(PortRef.make(strip.id, &"outlet", 3))
 	await _leave()
@@ -478,6 +586,55 @@ func _power(rack: SimDevice) -> bool:
 	await _frames(10)
 	await _shot("encendidos_trasera")
 	return true
+
+
+func _power_cord() -> StringName:
+	return &"power_cord_5m" if scenario == "wall" else &"power_cord_3m"
+
+
+## The cable guide panel is up and says `step` and `what`.
+func _check_guide(step: String, what: String) -> void:
+	if not s.hud.cable_panel_visible():
+		_fail("no aparece la guía del cable (%s)" % step)
+		return
+	var text := s.hud.cable_panel_text()
+	_note("  guía: " + text)
+	if not text.contains(step) or not text.contains(what):
+		_fail("la guía del cable no dice «%s» / «%s»: «%s»" % [step, what, text])
+
+
+## basic: a cable half laid is cancelled when the player goes to do something else (the
+## computer), and Esc in the overview cancels a chosen cable (ADR 0011).
+func _cable_cancelled_by_other_work(strip: SimDevice) -> bool:
+	_note("5b. Cable a medias: ponerse con el ordenador lo cancela; Esc también")
+	if not await _choose_cable(&"power_cord_3m"):
+		return false
+	var cord := s.interaction.cable_tool.cable_id
+	await _click_port(PortRef.make(strip.id, &"outlet", 3))
+	if s.world.pending_cable() != cord:
+		_fail("el primer extremo no se conectó")
+		return false
+	await _leave()
+	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	if not await _wait_mode(InteractionManager.Mode.SCREEN):
+		return false
+	if s.world.pending_cable() >= 0 or s.world.get_device(cord).location != &"inventory":
+		_fail("al ponerse con el ordenador el cable a medias no se canceló")
+	if s.interaction.cable_tool.active():
+		_fail("la guía del cable sigue activa con el ordenador")
+	_note("  cancelado: cable en el inventario, toma %s libre" % PortRef.make(strip.id, &"outlet", 3))
+	_key(KEY_ESCAPE)
+	await _wait_mode(InteractionManager.Mode.OVERVIEW)
+	await _wait(func() -> bool: return not s.character.busy, 5.0)
+	if not await _choose_cable(&"power_cord_3m"):
+		return false
+	_key(KEY_ESCAPE)
+	await _frames(3)
+	if s.interaction.cable_tool.active() or s.hud.cable_panel_visible() or s.menu.visible:
+		_fail("Esc en la vista general no canceló el cable elegido (o abrió el menú)")
+	if not s.hud._toast.text.contains("Cable cancelado"):
+		_fail("al cancelar no se avisa: «%s»" % s.hud._toast.text)
+	return await _open(&"device", strip.id) # step 6 starts at the strip
 
 
 ## far: the power cable does not reach; unplug the loose end (right click) and move the rack
@@ -547,6 +704,8 @@ func _network(rack: SimDevice) -> bool:
 		_fail("sin enlace switch-router: %s" % link["reason"])
 		return false
 	await _check_cables_clear("tras cablear")
+	await _check_no_overlaps("tras cablear")
+	_check_cables_apart("tras cablear")
 	return true
 
 
@@ -571,22 +730,112 @@ func _check_cables_clear(label: String) -> void:
 				if view != null:
 					exclude.append(view.body.get_rid())
 		var path: PackedVector3Array = s.cables.paths[cable_id]
-		var query := PhysicsPointQueryParameters3D.new()
+		# The whole tube, not only its centre line: a sphere of the cable's radius (minus 1 mm
+		# for the facets of the drawn tube) slides along it.
+		var spec := s.world.get_device(cable_id).definition.get_spec(CableSpec) as CableSpec
+		var sphere := SphereShape3D.new()
+		sphere.radius = (CableRenderer.RADIUS_POWER if spec.media == &"power" else CableRenderer.RADIUS_DATA) - 0.001
+		var query := PhysicsShapeQueryParameters3D.new()
+		query.shape = sphere
 		query.collision_mask = Layers.FURNITURE | Layers.WALLS | Layers.DEVICES
 		query.exclude = exclude
 		for i: int in range(1, path.size()):
-			var steps := maxi(1, ceili(path[i - 1].distance_to(path[i]) / 0.02))
+			var steps := maxi(1, ceili(path[i - 1].distance_to(path[i]) / 0.01))
 			for k: int in steps + 1:
 				var p := path[i - 1].lerp(path[i], float(k) / steps)
-				query.position = p
-				var hits := space.intersect_point(query, 1)
+				query.transform = Transform3D(Basis.IDENTITY, p)
+				var hits := space.intersect_shape(query, 1)
 				checked += 1
 				if not hits.is_empty():
 					var what := hits[0]["collider"] as Node
 					_fail("%s: el cable %s atraviesa %s en %s" % [label, s.world.get_device(cable_id).definition.model,
-						what.get_parent().name if what != null else "?", _v(p)])
+						(what.get_parent().name + "/" + what.name) if what != null else "?", _v(p)])
 					return
-	_note("  cables comprobados (%s): %d puntos, ninguno dentro de un sólido" % [label, checked])
+	_note("  cables comprobados con su grosor (%s): %d posiciones, ninguna dentro de un sólido" % [label, checked])
+
+
+## No cable runs through another one: every drawn cable, sampled each centimetre, keeps at least
+## 75 % of the sum of both radii from every other cable (cables in a bundle lie side by side or
+## on top of each other; drawn tubes have 8 sides, so a little contact is allowed).
+func _check_cables_apart(label: String) -> void:
+	const CELL := 0.02
+	var grid := {} # Vector3i -> Array of [cable id, point, radius]
+	var samples := 0
+	for cable_id: int in s.cables.paths:
+		var spec := s.world.get_device(cable_id).definition.get_spec(CableSpec) as CableSpec
+		var radius := CableRenderer.RADIUS_POWER if spec.media == &"power" else CableRenderer.RADIUS_DATA
+		var path: PackedVector3Array = s.cables.paths[cable_id]
+		for i: int in range(1, path.size()):
+			var steps := maxi(1, ceili(path[i - 1].distance_to(path[i]) / 0.01))
+			for k: int in steps:
+				var p := path[i - 1].lerp(path[i], float(k) / steps)
+				var cell := Vector3i((p / CELL).floor())
+				if not grid.has(cell):
+					grid[cell] = []
+				(grid[cell] as Array).append([cable_id, p, radius])
+				samples += 1
+	for cell: Vector3i in grid:
+		for entry: Array in grid[cell]:
+			for dx: int in [-1, 0, 1]:
+				for dy: int in [-1, 0, 1]:
+					for dz: int in [-1, 0, 1]:
+						for other: Array in (grid.get(cell + Vector3i(dx, dy, dz), []) as Array):
+							if int(other[0]) <= int(entry[0]):
+								continue
+							var gap := (entry[1] as Vector3).distance_to(other[1])
+							if gap < 0.75 * (float(entry[2]) + float(other[2])):
+								_fail("%s: el cable %s atraviesa el cable %s en %s" % [label,
+									s.world.get_device(entry[0]).definition.model, s.world.get_device(other[0]).definition.model, _v(entry[1])])
+								return
+	_note("  cables entre sí (%s): %d muestras, ninguno dentro de otro" % [label, samples])
+
+
+## Nothing goes through anything: every device, the monitor and keyboard and the box stack are
+## checked against furniture, walls and the other devices with their colliders shrunk by 1 cm
+## (touching is allowed: the router stands on the cabinet). A device mounted in a rack may of
+## course be inside that rack.
+func _check_no_overlaps(label: String) -> void:
+	await _frames(3)
+	var space := s.get_world_3d().direct_space_state
+	var bodies: Array = [] # [body, allowed RIDs]
+	for view: DeviceView in s.device_views.values():
+		var d := s.world.get_device(view.device_id)
+		var allowed: Array[RID] = [view.body.get_rid()]
+		if d.location == &"mounted" and s.device_views.has(d.rack_id):
+			allowed.append((s.device_views[d.rack_id] as DeviceView).body.get_rid())
+		for m: SimDevice in s.world.mounted_in(d):
+			if s.device_views.has(m.id):
+				allowed.append((s.device_views[m.id] as DeviceView).body.get_rid())
+		bodies.append([view.body, allowed, d.display_name()])
+	for node: Node3D in [s.monitor, s.room.objects.get_node_or_null("Keyboard") as Node3D]:
+		if node == null:
+			continue
+		for child: Node in node.get_children():
+			if child is StaticBody3D:
+				bodies.append([child, [(child as StaticBody3D).get_rid()] as Array[RID], node.name])
+	if s.package_stack.visible:
+		bodies.append([s.package_stack.body, [s.package_stack.body.get_rid()] as Array[RID], "cajas"])
+	var checked := 0
+	for entry: Array in bodies:
+		var body := entry[0] as StaticBody3D
+		for shape_node: Node in body.get_children():
+			var shape := shape_node as CollisionShape3D
+			if shape == null or not (shape.shape is BoxShape3D):
+				continue
+			var shrunk := BoxShape3D.new()
+			shrunk.size = ((shape.shape as BoxShape3D).size - Vector3.ONE * 0.02).max(Vector3.ONE * 0.002)
+			var query := PhysicsShapeQueryParameters3D.new()
+			query.shape = shrunk
+			query.transform = shape.global_transform
+			query.collision_mask = Layers.FURNITURE | Layers.WALLS | Layers.DEVICES
+			query.exclude = entry[1]
+			checked += 1
+			for hit: Dictionary in space.intersect_shape(query, 4):
+				var other := hit["collider"] as Node
+				# Two devices of the same rack: the rack box (excluded) holds both; their own boxes
+				# must not overlap, so they are still checked.
+				_fail("%s: %s atraviesa %s" % [label, entry[2], (other.get_parent().name + "/" + other.name) if other != null else "?"])
+	_note("  objetos comprobados (%s): %d, ninguno dentro de otro" % [label, checked])
 
 
 func _server_ip(rack: SimDevice) -> bool:
@@ -741,8 +990,8 @@ func _sit_stand_repeatedly(times: int) -> bool:
 		await _wait(func() -> bool: return not s.character.busy, 5.0)
 		_check_standing("vez %d" % (i + 1))
 		_note("  vez %d: sentado y de pie en %s" % [i + 1, _v(s.character.global_position)])
-	await _click_point(Vector3(0.4, 0.0, 0.3))
-	if not s.character.moving and s.character.global_position.distance_to(Vector3(0.4, 0.0, 0.3)) > 0.3:
+	await _click_point(Vector3(0.95, 0.0, 0.3))
+	if not s.character.moving and s.character.global_position.distance_to(Vector3(0.95, 0.0, 0.3)) > 0.3:
 		_fail("tras levantarse, el personaje no vuelve a caminar")
 	await _wait(func() -> bool: return not s.character.moving)
 	return true
@@ -752,6 +1001,8 @@ func _sit_stand_repeatedly(times: int) -> bool:
 ## back, the character stands on a free spot (never inside the chair), cables are drawn again.
 func _save_and_load(rack_id: int) -> void:
 	_note("12. Guardar sentado ante el PC, cambiar la partida y cargar")
+	# Clock paused (it is saved too): no passive income can be paid between saving and checking.
+	await _press(s.hud._speed_buttons[0.0], "II (pausa)")
 	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	if not await _wait_mode(InteractionManager.Mode.SCREEN):
 		return
@@ -791,12 +1042,15 @@ func _save_and_load(rack_id: int) -> void:
 	if Vector2(s.character.global_position.x - chair.x, s.character.global_position.z - chair.z).length() < 0.35:
 		_fail("tras cargar, el personaje está dentro de la silla")
 	await _check_cables_clear("tras cargar")
+	await _check_no_overlaps("tras cargar")
+	_check_cables_apart("tras cargar")
 	var rack_view := s.device_views.get(rack_id) as DeviceView
 	for d: SimDevice in s.world.mounted_in(s.world.get_device(rack_id)):
 		var view := s.device_views.get(d.id) as DeviceView
 		if view == null or not view.visible or view.global_position.distance_to(rack_view.global_position) > 0.8:
 			_fail("tras cargar, %s no está en su rack" % d.display_name())
 	await _shot("tras_cargar")
+	await _press(s.hud._speed_buttons[1.0], "×1")
 
 
 func _snapshot() -> Dictionary:
@@ -808,7 +1062,7 @@ func _snapshot() -> Dictionary:
 	for id: int in s.world.cable_ends:
 		cables.append([id, s.world.cable_ends[id]["a"], s.world.cable_ends[id]["b"]])
 	cables.sort()
-	return {"credits": s.world.credits, "xp": s.world.xp, "completed": s.world.mission.completed,
+	return {"credits": s.world.credits, "xp": s.world.xp, "completed": s.world.mission.completed, "ledger": s.world.economy.ledger.size(),
 		"devices": devices, "cables": cables, "packages": s.world.packages.size()}
 
 
@@ -1051,7 +1305,7 @@ func _choose_cable(item_id: StringName) -> bool:
 	var label := s.world.catalog.get_item(item_id).model
 	if not await _press(_find_button(s.hud._inventory_row, label), "inventario: " + label):
 		return false
-	var chosen := s.world.get_device(s.interaction.selected_cable)
+	var chosen := s.world.get_device(s.interaction.cable_tool.cable_id)
 	if chosen == null or chosen.definition.id != item_id:
 		_fail("el botón «%s» no eligió ese cable" % label)
 		return false
@@ -1193,13 +1447,52 @@ func _find_button(root: Node, text: String) -> Button:
 	return null
 
 
-## The «Añadir» button of the shop card whose title is `product`.
-func _shop_add_button(product: String) -> Button:
-	for node: Node in s.screen.find_children("*", "Label", true, false):
-		var label := node as Label
-		if label.text == product and label.is_visible_in_tree() and not label.is_queued_for_deletion():
-			return _find_button(label.get_parent().get_parent(), "Añadir")
+## The «Añadir a la cesta» button of the shop card of `item_id` (catalogue page).
+func _shop_add_button(item_id: StringName) -> Button:
+	var card := s.screen.shop.find_child("Card_%s" % item_id, true, false)
+	if card == null or card.is_queued_for_deletion():
+		return null
+	return card.find_child("Add_%s" % item_id, true, false) as Button
+
+
+func _find_link(root: Node, text: String) -> Button:
+	for node: Node in root.find_children("*", "Button", true, false):
+		var link := node as Button
+		if link.text == text and link.is_visible_in_tree() and not link.is_queued_for_deletion():
+			return link
 	return null
+
+
+## The shop: a product page opened from its card (photo, gallery, specs, reviews), then back.
+func _shop_product_page() -> bool:
+	_note("1a. Tienda: ficha de producto con fotos, especificaciones y opiniones")
+	var listing := s.world.catalog.get_listing(&"server_1u_entry")
+	var title := _find_link(s.screen.shop, listing.title)
+	if not await _press(title, "ficha del servidor"):
+		return false
+	await _frames(5)
+	var photo := s.screen.shop.find_child("MainPhoto", true, false) as TextureRect
+	if photo == null or photo.texture == null:
+		_fail("la ficha no muestra la foto del producto")
+		return false
+	var texts: Array[String] = []
+	for node: Node in s.screen.shop.find_children("*", "Label", true, false):
+		texts.append((node as Label).text)
+	var joined := " | ".join(texts)
+	for expected: String in ["Opiniones de clientes", "Especificaciones", "En la caja", "Compra verificada", "2 × RJ45", "+4 cr por hora"]:
+		if not joined.contains(expected):
+			_fail("la ficha no muestra «%s»" % expected)
+	await _shot("tienda_ficha")
+	await _manual("06b_ficha_producto", [photo.get_global_rect()])
+	var first := photo.texture
+	var thumbs := s.screen.shop.find_children("*", "TextureButton", true, false)
+	if thumbs.size() >= 2:
+		await _press(thumbs[thumbs.size() - 1] as TextureButton, "segunda foto")
+		await _frames(3)
+		var again := s.screen.shop.find_child("MainPhoto", true, false) as TextureRect
+		if again == null or again.texture == first:
+			_fail("la miniatura no cambió la foto grande")
+	return await _press(_find_link(s.screen.shop, "◀ Volver a los resultados"), "volver a los resultados")
 
 
 func _scroll_parent(control: Control) -> ScrollContainer:

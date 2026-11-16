@@ -1,22 +1,30 @@
 class_name ComputerScreen
 extends CanvasLayer
-## The in-world computer's desktop, "HomeLab OS" (docs/TERMINAL_DESIGN.md §2): Shop, Orders and
-## Terminal apps. Shown full screen once the camera reaches the monitor (docs/INTERACTION_SYSTEM.md §6:
-## the prototype uses the full-screen variant; the shared SubViewport is spike S2).
+## The in-world computer's desktop, "HomeLab OS" (docs/TERMINAL_DESIGN.md §2): Shop, Second hand,
+## My account, Orders and Terminal. Shown full screen once the camera reaches the monitor
+## (docs/INTERACTION_SYSTEM.md §6: the prototype uses the full-screen variant; the shared
+## SubViewport is spike S2). Each app is built once and kept (the basket survives switching).
 
 signal closed
 signal menu_requested
+signal message_shown(ok: bool) ## An app showed a result (false = something was refused).
+
+const APPS := [["shop", "Tienda"], ["market", "Segunda mano"], ["account", "Mi cuenta"], ["orders", "Pedidos"], ["terminal", "Terminal"]]
 
 var world: SimWorld
 var pc_id: int = -1
+var shop: ShopApp
+var market: MarketApp
+var account: AccountApp
 var _root: PanelContainer
-var _content: VBoxContainer
+var _content: MarginContainer
+var _orders: VBoxContainer
 var _clock: Label
 var _credits: Label
-var _cart: Array[StringName] = []
 var _page: StringName = &""
-var _message: Label
 var _terminal: TerminalView = null
+var _app_buttons: Dictionary = {}
+var _dirty: bool = false
 
 
 func setup(sim_world: SimWorld, pc_device_id: int) -> void:
@@ -52,22 +60,42 @@ func setup(sim_world: SimWorld, pc_device_id: int) -> void:
 	apps.custom_minimum_size = Vector2(170, 0)
 	body.add_child(apps)
 	apps.add_child(UiStyle.label(TranslationServer.translate("Aplicaciones"), 14, UiStyle.MIST))
-	apps.add_child(UiStyle.button(TranslationServer.translate("Tienda"), show_page.bind(&"shop")))
-	apps.add_child(UiStyle.button(TranslationServer.translate("Pedidos"), show_page.bind(&"orders")))
-	apps.add_child(UiStyle.button(TranslationServer.translate("Terminal"), show_page.bind(&"terminal")))
-	var margin := MarginContainer.new()
-	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for app: Array in APPS:
+		var b := UiStyle.button(TranslationServer.translate(app[1]), show_page.bind(StringName(app[0])))
+		b.toggle_mode = true
+		apps.add_child(b)
+		_app_buttons[StringName(app[0])] = b
+	_content = MarginContainer.new()
+	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_content.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	for side: String in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 14)
-	body.add_child(margin)
-	_content = VBoxContainer.new()
-	margin.add_child(_content)
+		_content.add_theme_constant_override("margin_" + side, 12)
+	body.add_child(_content)
+	shop = ShopApp.new()
+	shop.setup(world, pc_id)
+	shop.message_shown.connect(func(_text: String, ok: bool) -> void: message_shown.emit(ok))
+	_content.add_child(shop)
+	market = MarketApp.new()
+	market.setup(world)
+	market.message_shown.connect(func(_text: String, ok: bool) -> void: message_shown.emit(ok))
+	_content.add_child(market)
+	account = AccountApp.new()
+	account.setup(world)
+	_content.add_child(account)
+	_orders = VBoxContainer.new()
+	_orders.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_content.add_child(_orders)
+	for page: Control in [shop, market, account, _orders]:
+		page.visible = false
+	world.event_emitted.connect(func(_type: StringName, _data: Dictionary) -> void: _dirty = true)
 
 
 func open() -> void:
 	visible = true
 	if _page == &"":
 		show_page(&"shop")
+	else:
+		show_page(_page)
 	refresh()
 
 
@@ -86,14 +114,21 @@ func _input(event: InputEvent) -> void:
 
 func show_page(page: StringName) -> void:
 	_page = page
-	for child: Node in _content.get_children():
-		if child != _terminal:
-			child.queue_free()
+	for key: StringName in _app_buttons:
+		(_app_buttons[key] as Button).button_pressed = key == page
+	shop.visible = page == &"shop"
+	market.visible = page == &"market"
+	account.visible = page == &"account"
+	_orders.visible = page == &"orders"
 	if _terminal != null:
 		_terminal.visible = page == &"terminal"
 	match page:
 		&"shop":
-			_build_shop()
+			shop.show_list()
+		&"market":
+			market.rebuild()
+		&"account":
+			account.rebuild()
 		&"orders":
 			_build_orders()
 		&"terminal":
@@ -104,108 +139,57 @@ func show_page(page: StringName) -> void:
 				_content.add_child(_terminal)
 			_terminal.visible = true
 			_terminal.focus_input.call_deferred()
+	_dirty = false
 	refresh()
 
 
+## Called a few times per second: header, and pages that show live state are rebuilt after a
+## change in the world (deliveries, income, sales). The shop keeps its page and scroll.
 func refresh() -> void:
 	if not visible:
 		return
 	_clock.text = "   " + world.clock_text() + "   "
 	_credits.text = TranslationServer.translate("%d créditos") % world.credits
-
-
-# -------------------------------------------------------------------- shop --
-
-func _build_shop() -> void:
-	_content.add_child(UiStyle.label(TranslationServer.translate("Tienda Rackwell & Cía. — material para tu homelab"), 22))
-	if not NetworkEngine.has_internet(world, world.get_device(pc_id)):
-		_content.add_child(UiStyle.label(TranslationServer.translate("Sin conexión: el ordenador no llega a Internet. Revisa el cable y el router."), 16, UiStyle.BAD))
-		return
-	var columns := HBoxContainer.new()
-	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_content.add_child(columns)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	columns.add_child(scroll)
-	var list := VBoxContainer.new()
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
-	for def: HardwareDefinition in world.catalog.purchasable_items():
-		var card := PanelContainer.new()
-		card.add_theme_stylebox_override("panel", UiStyle.panel(Color("#22303D"), 6, 10))
-		list.add_child(card)
-		var row := HBoxContainer.new()
-		card.add_child(row)
-		var info := VBoxContainer.new()
-		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(info)
-		info.add_child(UiStyle.label(def.display_name(), 17))
-		var desc := UiStyle.label(def.description, 13, UiStyle.MIST)
-		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		info.add_child(desc)
-		row.add_child(UiStyle.label(TranslationServer.translate("%d cr") % def.price, 17, UiStyle.MUSTARD))
-		row.add_child(UiStyle.button(TranslationServer.translate("Añadir"), _add_to_cart.bind(def.id)))
-	var cart_panel := PanelContainer.new()
-	cart_panel.custom_minimum_size = Vector2(300, 0)
-	cart_panel.add_theme_stylebox_override("panel", UiStyle.panel(Color("#22303D"), 6, 12))
-	columns.add_child(cart_panel)
-	var cart_box := VBoxContainer.new()
-	cart_panel.add_child(cart_box)
-	cart_box.add_child(UiStyle.label(TranslationServer.translate("Carrito"), 19))
-	var total := 0
-	for i: int in _cart.size():
-		var def := world.catalog.get_item(_cart[i])
-		total += def.price
-		var line := HBoxContainer.new()
-		var name_label := UiStyle.label("%s — %d cr" % [def.display_name(), def.price], 14)
-		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		line.add_child(name_label)
-		line.add_child(UiStyle.button("×", _remove_from_cart.bind(i)))
-		cart_box.add_child(line)
-	if _cart.is_empty():
-		cart_box.add_child(UiStyle.label(TranslationServer.translate("Vacío. Añade productos de la lista."), 14, UiStyle.MIST))
-	cart_box.add_child(UiStyle.label(TranslationServer.translate("Total: %d créditos") % total, 17, UiStyle.MUSTARD))
-	cart_box.add_child(UiStyle.button(TranslationServer.translate("Comprar"), _buy, _cart.is_empty()))
-	_message = UiStyle.label("", 14, UiStyle.OK)
-	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	cart_box.add_child(_message)
-
-
-func _add_to_cart(item_id: StringName) -> void:
-	_cart.append(item_id)
-	show_page(&"shop")
-
-
-func _remove_from_cart(index: int) -> void:
-	_cart.remove_at(index)
-	show_page(&"shop")
-
-
-func _buy() -> void:
-	var r := world.purchase(_cart)
-	if r.ok:
-		_cart.clear()
-	show_page(&"shop")
-	_message.text = r.message
-	_message.add_theme_color_override("font_color", UiStyle.OK if r.ok else UiStyle.BAD)
+	shop.refresh_balance()
+	if _dirty:
+		_dirty = false
+		match _page:
+			&"account":
+				account.rebuild()
+			&"orders":
+				_build_orders()
+			&"market":
+				market.rebuild()
 
 
 # ------------------------------------------------------------------ orders --
 
 func _build_orders() -> void:
-	_content.add_child(UiStyle.label(TranslationServer.translate("Mis pedidos"), 22))
+	for child: Node in _orders.get_children():
+		_orders.remove_child(child)
+		child.queue_free()
+	_orders.add_child(UiStyle.label(TranslationServer.translate("Mis pedidos"), 22))
 	if world.orders.is_empty():
-		_content.add_child(UiStyle.label(TranslationServer.translate("Todavía no has pedido nada. Abre la Tienda."), 15, UiStyle.MIST))
+		_orders.add_child(UiStyle.label(TranslationServer.translate("Todavía no has pedido nada. Abre la Tienda."), 15, UiStyle.MIST))
 		return
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_orders.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
 	var pending := false
-	for order: Dictionary in world.orders:
+	var newest_first := world.orders.duplicate()
+	newest_first.reverse()
+	for order: Dictionary in newest_first:
 		var names: Array[String] = []
 		for group: Array in order["groups"]:
-			names.append(world.get_device(group[0]).display_name())
+			for device_id: int in group:
+				names.append(world.get_device(device_id).display_name())
 		var state: String
 		if order["delivered"]:
-			state = TranslationServer.translate("Entregado: los paquetes están junto a la puerta.")
+			state = TranslationServer.translate("Entregado: las cajas están en la zona de entregas, junto a la puerta.")
 		else:
 			pending = true
 			state = TranslationServer.translate("En camino: llega en %s.") % SimWorld.format_duration(order["eta"] - world.time_minutes)
@@ -214,11 +198,13 @@ func _build_orders() -> void:
 		var box := VBoxContainer.new()
 		card.add_child(box)
 		box.add_child(UiStyle.label(TranslationServer.translate("Pedido %d — %d créditos") % [order["id"], order["total"]], 16))
-		box.add_child(UiStyle.label(", ".join(names), 14, UiStyle.MIST))
+		var items := UiStyle.label(", ".join(names), 14, UiStyle.MIST)
+		items.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		box.add_child(items)
 		box.add_child(UiStyle.label(state, 14, UiStyle.OK if order["delivered"] else UiStyle.WARN))
-		_content.add_child(card)
+		list.add_child(card)
 	if pending:
-		_content.add_child(UiStyle.button(TranslationServer.translate("Esperar hasta la entrega"), _wait_delivery))
+		_orders.add_child(UiStyle.button(TranslationServer.translate("Esperar hasta la entrega"), _wait_delivery))
 
 
 func _wait_delivery() -> void:

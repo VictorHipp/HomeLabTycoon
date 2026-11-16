@@ -4,7 +4,7 @@
 > - **Existe hoy:**
 >   - `tests/smoke_test.gd`: carga todos los `.gd`, `.tscn` y `.tres` propios y comprueba el catálogo y la escena principal;
 >   - `tests/check_models.gd`: tamaño en metros, Y hacia arriba, marcadores y su orientación en cada `.glb`;
->   - `tests/run_tests.gd`: *runner* propio (decisión 4) con 37 pruebas sin ventana (`tests/unit/`, `tests/integration/`): IPv4, catálogo, frontera `sim/`, terminal, cámara, la misión completa con dos soluciones y casos negativos, y la colocación del rack (espacio de trabajo, alcance del cable de corriente, mover y recoger);
+>   - `tests/run_tests.gd`: *runner* propio (decisión 4) con pruebas sin ventana (`tests/unit/`, `tests/integration/`): IPv4, catálogo y fichas de la tienda, frontera `sim/`, terminal, cámara, la misión completa con dos soluciones y casos negativos, la colocación del rack (espacio de trabajo, alcance del cable de corriente, mover y recoger), entregas, guardado (también de partidas v1), recorridos de cable ordenados en otra sala, cableado guiado y cancelación, y la economía (libro que cuadra, XP una vez, ingresos pasivos con tope, segunda mano siempre con pérdida);
 >   - `tools/check_project.ps1`: importación, smoke test, modelos, pruebas y ejecución de la escena principal; falla con cualquier `ERROR`;
 >   - `tools/walkthrough.ps1`: recorrido automático de la primera misión **solo por la vía de entrada real**. No llama directamente a ningún método del juego; usa:
 >     - clics sintéticos sobre posiciones 3D proyectadas;
@@ -17,6 +17,8 @@
 >     - `wall`: rechazo con motivo y giro; al final, epílogo con «Desconectar todos los cables», «Recoger rack» rechazado con motivo, «Desmontar» ×2 y «Recoger rack»;
 >     - `far`: el cable no llega, se desconecta con clic derecho y se mueve el rack;
 >     - `blocking`: «no puedo llegar» y se mueve el rack con clic derecho.
+>
+>     En todos (2026-11-16): anillo bajo el puntero en cada clic y rojo en un clic en el vacío; ficha de producto (foto, miniatura, especificaciones, opiniones) y compra por la cesta; guía del cable «Paso 1 de 2 / 2 de 2», tomas iluminadas y flechas; cada cable dibujado se recorre con una esfera de su radio contra muebles, paredes, rodapié y equipos, y ningún equipo, monitor, teclado ni pila de cajas atraviesa otro objeto. En `basic`, además: un cable a medias se cancela al sentarse al ordenador y otro con Esc; ingreso pasivo cobrado a la hora con ×4; «Mi cuenta»; venta en «Segunda mano». En `wall`, el rack junto a la pared necesita los cables de corriente de 5 m.
 >
 >     Guarda capturas y un registro en `build/walkthrough/` (sin versionar). Comprobado a 1600×900 (`play.ps1`) y a 1280×720 (F5 en el editor) con `-Resolution`.
 >   - `tools/play.ps1`: comprobado a mano (2026-11-15). El proceso sigue vivo, la ventana responde y el registro `user://logs/godot.log` sale sin errores;

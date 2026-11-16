@@ -8,6 +8,7 @@ const ROOM_MODEL := "res://assets/models/rooms/room_bedroom.glb"
 const ROOM_SIZE := Vector2(3.5, 3.0)
 const WALL_HEIGHT := 2.6
 const WALL_THICKNESS := 0.1
+const SKIRTING_HEIGHT := 0.08 ## Skirting boards of the room model (build_prototype_models.py).
 ## [model, position, yaw degrees, blocks walking]
 const FURNITURE := [
 	["res://assets/models/furniture/bed_single.glb", Vector3(-1.24, 0.0, -0.465), 0.0, true],
@@ -59,6 +60,20 @@ func build() -> void:
 			[Vector3(-hx, WALL_HEIGHT / 2, 0), Vector3(WALL_THICKNESS, WALL_HEIGHT, ROOM_SIZE.y)],
 			[Vector3(hx, WALL_HEIGHT / 2, 0), Vector3(WALL_THICKNESS, WALL_HEIGHT, ROOM_SIZE.y)]]:
 		ModelUtil.add_box_body(nav_region, AABB(spec[0] - spec[1] / 2, spec[1]), Layers.WALLS)
+	# Skirting boards (in the model, 8 cm high): solid too, so nothing can be dropped or drawn
+	# through them. The left one stops at the door.
+	var t := BedroomScenario.SKIRTING_M
+	var door := BedroomScenario.DOOR_ZONE
+	var sx := ROOM_SIZE.x / 2
+	var sz := ROOM_SIZE.y / 2
+	for box: AABB in [
+			AABB(Vector3(-sx, 0, -sz), Vector3(ROOM_SIZE.x, SKIRTING_HEIGHT, t)),
+			AABB(Vector3(-sx, 0, sz - t), Vector3(ROOM_SIZE.x, SKIRTING_HEIGHT, t)),
+			AABB(Vector3(sx - t, 0, -sz), Vector3(t, SKIRTING_HEIGHT, ROOM_SIZE.y)),
+			AABB(Vector3(-sx, 0, -sz), Vector3(t, SKIRTING_HEIGHT, door.position.y + sz)),
+			AABB(Vector3(-sx, 0, door.end.y), Vector3(t, SKIRTING_HEIGHT, sz - door.end.y))]:
+		if box.size.z > 0.0:
+			ModelUtil.add_box_body(nav_region, box, Layers.WALLS).name = "Skirting"
 
 	for spec: Array in FURNITURE:
 		var piece := ModelUtil.instance_model(spec[0])

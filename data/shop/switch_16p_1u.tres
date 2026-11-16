@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="ShopListing" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/shop_listing.gd" id="1_7viuu"]
+
+[resource]
+script = ExtResource("1_7viuu")
+item_id = &"switch_16p_1u"
+title = "Linkara LS-16G — Switch de 16 puertos Gigabit no gestionable para rack de 19\" (1U), con cable de alimentación"
+bullets = PackedStringArray("16 puertos RJ45 Gigabit en el frontal, cada uno con su LED de enlace.", "No gestionable: lo conectas y funciona, sin configurar nada (no tiene VLAN ni panel web).", "Sin botón de encendido: arranca en cuanto recibe corriente.", "Entrada de alimentación en la trasera; incluye un cable de alimentación de 3 m.", "1U de altura para montarlo en rack.")
+description = "El LS-16G une los equipos de tu red: todo lo que conectes a sus puertos queda en la misma red local que el router de casa, si enlazas uno de sus puertos con el router.
+
+Al ser no gestionable no hay nada que configurar. El LED de cada puerto se enciende en verde cuando hay enlace con el equipo del otro extremo, lo que ayuda mucho a encontrar un cable mal puesto.
+
+Los puertos de red están delante y la corriente detrás: cuando lo montes, ten a mano las dos caras del rack."
+reviews = Array[Dictionary]([{
+"author": "Elena B.",
+"date": "hace 6 días",
+"stars": 5,
+"text": "Lo monté, le di corriente y en unos segundos tenía enlace en todos los puertos que usé.",
+"title": "Enchufar y funcionar",
+"verified": true
+}, {
+"author": "Hugo F.",
+"date": "hace 2 semanas",
+"stars": 4,
+"text": "Los puertos de red están en el frontal y la entrada de corriente en la trasera. Nada raro, pero tenlo en cuenta al cablear.",
+"title": "Puertos delante, corriente detrás",
+"verified": true
+}, {
+"author": "Jorge M.",
+"date": "hace 1 mes",
+"stars": 3,
+"text": "Es no gestionable, así que nada de VLAN. Para casa vale; si quieres separar redes necesitas uno gestionable.",
+"title": "Sin VLAN",
+"verified": true
+}, {
+"author": "Marta G.",
+"date": "hace 2 meses",
+"stars": 5,
+"text": "Cada puerto tiene su LED: verde cuando hay enlace. Así ves enseguida qué cable falla.",
+"title": "LED muy claros",
+"verified": true
+}])

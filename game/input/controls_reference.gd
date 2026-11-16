@@ -19,7 +19,8 @@ const GROUPS := [
 	["En la habitación", [
 		["Caminar hasta un punto / usar un objeto (ordenador, cajas, rack, regleta, router)", [&"interact"]],
 		["Mover el rack (sus cables se vuelven a tender si siguen llegando)", [&"secondary"]],
-		["Soltar el cable elegido · abrir el menú", [&"close_interaction"]],
+		["Cancelar el cable que estás tendiendo (vuelve al inventario) · abrir el menú", [&"close_interaction"]],
+		["Tender un cable: elegirlo en el inventario y seguir el panel «Paso 1 de 2 / 2 de 2»", "Clic izquierdo en el cable y luego en las tomas que brillan"],
 		["Abrir el manual", [&"open_manual"]],
 	]],
 	["Colocar un objeto", [
@@ -30,7 +31,7 @@ const GROUPS := [
 		["Girar la cámara mientras colocas", "Arrastrar con el botón derecho"],
 	]],
 	["Vista de cerca (rack, regleta, router)", [
-		["Conectar el cable elegido en un puerto", "Clic izquierdo sobre el puerto"],
+		["Conectar el cable elegido en un puerto (brillan los compatibles: verde si llega, naranja si no)", "Clic izquierdo sobre el puerto"],
 		["Desconectar el cable de un puerto", [&"secondary"]],
 		["Cara frontal / trasera del rack", [&"rotate_object"]],
 		["Volver a la vista general", [&"close_interaction"]],

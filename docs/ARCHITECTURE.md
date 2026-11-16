@@ -138,6 +138,8 @@ Todo contenido se valida con pruebas automáticas: ids únicos, referencias que 
 
 **Momento:** cada módulo nace serializable desde el Hito 1. La interfaz de ranuras y carga llega en el Hito 7 ([ROADMAP.md](ROADMAP.md)). Si el guardado se dejara para el final, obligaría a reescribir módulos.
 
+**Implementado:** formato `homelab-tycoon-save` (`sim/core/save_game.gd`). La versión 1 (2026-11-15) es la primera. La versión 2 (2026-11-16) añade la sección `economy` (libro de movimientos e ingresos pasivos), `used` en cada equipo y `rewarded` en la misión. Una partida v1 se migra rellenando valores por defecto y se comprueba en `tests/integration/test_economy.gd`.
+
 ## 8. Tiempo de juego `[CONFIRMADO: simplificado, acelerable o saltable]` · diseño `[PROPUESTA]`
 
 - Reloj de juego con escala: pausa, ×1, ×2, ×4 y «saltar hasta el siguiente evento» (p. ej. la entrega), solo cuando no hay nada que el jugador esté haciendo.

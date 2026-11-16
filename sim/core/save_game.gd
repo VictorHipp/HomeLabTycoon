@@ -5,7 +5,9 @@ extends RefCounted
 ## writing files is done by the game layer (game/save/save_service.gd).
 
 const FORMAT := "homelab-tycoon-save"
-const VERSION := 1
+## 1: first format. 2 (2026-11-16): economy (ledger, passive income), device "used", XP already
+## granted per mission requirement.
+const VERSION := 2
 
 
 ## Builds the document. `session` is owned by the presentation (character, camera...).
@@ -27,7 +29,12 @@ static func parse(text: String) -> Dictionary:
 	if version > VERSION:
 		return {"ok": false, "message": "La partida es de una versión más nueva del juego (%d)." % version, "document": {}}
 	var document: Dictionary = data
-	# Migrations are chained here, one function per version step (v1 is the first format).
+	# Migrations are chained here, one step per version.
 	if not (document.get("sim") is Dictionary):
 		return {"ok": false, "message": "La partida está incompleta.", "document": {}}
+	if version < 2:
+		# v1 -> v2: the new parts start empty (SimWorld, SimDevice and MissionTracker fill the
+		# defaults: no ledger lines, "used" for what is installed, requirement XP already given
+		# when the mission was completed).
+		document["version"] = 2
 	return {"ok": true, "message": "", "document": document}

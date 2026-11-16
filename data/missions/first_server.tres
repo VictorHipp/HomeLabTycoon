@@ -8,6 +8,7 @@ script = ExtResource("1_61lfd")
 id = &"rack_placed"
 text = "Coloca el rack en la habitación."
 validator = &"device_placed"
+xp = 10
 params = {
 "category": "rack"
 }
@@ -17,6 +18,7 @@ script = ExtResource("1_61lfd")
 id = &"switch_mounted"
 text = "Monta el switch en el rack."
 validator = &"device_mounted"
+xp = 10
 params = {
 "category": "switch"
 }
@@ -26,6 +28,7 @@ script = ExtResource("1_61lfd")
 id = &"server_mounted"
 text = "Monta el servidor en el rack."
 validator = &"device_mounted"
+xp = 10
 params = {
 "category": "server"
 }
@@ -35,6 +38,7 @@ script = ExtResource("1_61lfd")
 id = &"powered"
 text = "Enciende el switch y el servidor (necesitan su cable de corriente)."
 validator = &"devices_running"
+xp = 10
 params = {
 "categories": ["switch", "server"]
 }
@@ -44,6 +48,7 @@ script = ExtResource("1_61lfd")
 id = &"server_to_switch"
 text = "Conecta el servidor al switch con un cable de red."
 validator = &"cabled_to"
+xp = 10
 params = {
 "a": "server",
 "b": "switch"
@@ -54,6 +59,7 @@ script = ExtResource("1_61lfd")
 id = &"switch_uplink"
 text = "Conecta el switch a la red de casa (al router)."
 validator = &"uplink_to_router"
+xp = 10
 params = {
 "category": "switch"
 }
@@ -63,6 +69,7 @@ script = ExtResource("1_61lfd")
 id = &"server_ip"
 text = "Da al servidor una IP de la red de casa (192.168.1.0/24) que no esté repetida."
 validator = &"ip_in_subnet"
+xp = 10
 params = {
 "category": "server",
 "subnet": "192.168.1.0/24"
@@ -73,6 +80,7 @@ script = ExtResource("1_61lfd")
 id = &"pc_server_ping"
 text = "El PC y el servidor se comunican en los dos sentidos."
 validator = &"reachable_both"
+xp = 10
 params = {
 "a": "computer",
 "b": "server"
@@ -83,7 +91,7 @@ script = ExtResource("2_nrwrr")
 id = &"first_server"
 title = "Primer servidor"
 context = "Quieres empezar tu homelab. Compra en la tienda del PC un rack, un switch y un servidor, móntalos y consigue que el PC y el servidor se comuniquen a través del switch."
-budget_note = "Tienes 1500 créditos: suficiente, pero sin mucho margen."
+budget_note = "Tienes 1000 créditos: suficiente para el rack, el switch, el servidor y sus cables, con poco margen para errores."
 reward_credits = 600
-reward_xp = 150
+reward_xp = 70
 requirements = Array[ExtResource("1_61lfd")]([SubResource("Resource_kpqi2"), SubResource("Resource_sa3tt"), SubResource("Resource_v7oif"), SubResource("Resource_6gsfv"), SubResource("Resource_olugy"), SubResource("Resource_n25vq"), SubResource("Resource_7r3so"), SubResource("Resource_uvnuk")])

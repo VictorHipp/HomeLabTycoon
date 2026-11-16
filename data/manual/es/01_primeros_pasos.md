@@ -4,19 +4,21 @@
 ![Vista general de la habitación con los paneles de la pantalla marcados](res://assets/manual/01_vista_general.png)
 Empiezas en tu habitación con un ordenador antiguo conectado al router de casa. Tu primera misión es montar un pequeño servidor y conseguir que tu PC hable con él.
 
-- **Arriba a la izquierda:** tus créditos, tu nivel y la experiencia, el reloj del juego, la velocidad del tiempo (`II`, `×1`, `×2`, `×4`), «Saltar espera» y el botón «Menú».
+- **Arriba a la izquierda:** tus créditos (y, debajo, lo que ganas por hora si tienes un servidor en línea), tu nivel y la experiencia, el reloj del juego, la velocidad del tiempo (`II`, `×1`, `×2`, `×4`), «Saltar espera» y el botón «Menú». Cada vez que ganas o gastas créditos o experiencia aparece al lado un aviso como «+10 XP» o «−808 cr».
 - **Arriba a la derecha:** la misión. Cada requisito se marca con ✓ cuando está hecho; el juego lo comprueba solo.
 - **Abajo:** los mensajes, el inventario (lo que has desembalado y aún no has colocado) y una línea de ayuda con los controles del momento.
 
-> Empiezas con 1500 créditos. La misión da 600 créditos y 150 de experiencia.
+> Empiezas con 1000 créditos: justo para el material de la misión y algún error. Cada objetivo cumplido da 10 de experiencia la primera vez, y la misión completa da 600 créditos y 70 más (150 en total).
 
 ## Caminar
 ![El personaje caminando hacia el punto pulsado, marcado con un círculo](res://assets/manual/02_caminar.png)
-1. Haz **clic izquierdo** en el suelo: tu personaje camina hasta allí rodeando los muebles. Un anillo marca el destino.
+1. Haz **clic izquierdo** en el suelo: tu personaje camina hasta allí rodeando los muebles. Un anillo turquesa marca el destino; si es rojo, ahí no se puede llegar.
 2. Haz clic en un objeto (el ordenador, las cajas, el rack, la regleta, el router) para ir hasta él y usarlo.
 3. Si un sitio no es accesible, el personaje lo dice: «No puedo llegar ahí». Si algo le corta el paso por el camino, se detiene y avisa.
 
 El personaje acelera y frena con suavidad, y sus piernas se mueven según lo que avanza de verdad: si se para contra algo, deja de andar.
+
+> Cada clic deja un pequeño círculo bajo el puntero, también en los menús, para que sepas que se ha registrado. Si el clic no sirve para nada (en el vacío, o algo que no se puede hacer), el círculo se vuelve rojo con una cruz. Al hacer clic en un objeto que se puede usar, el objeto se ilumina un momento.
 
 ## Mover la cámara
 ![La cámara girada; abajo, la línea de ayuda con los controles](res://assets/manual/03_camara.png)

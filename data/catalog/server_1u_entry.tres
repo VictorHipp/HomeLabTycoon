@@ -40,4 +40,5 @@ boot_minutes = 1.5
 ports = Array[ExtResource("1_7in2j")]([SubResource("Resource_43xdm"), SubResource("Resource_72a7n")])
 specs = Array[Resource]([SubResource("Resource_mwlks")])
 box_contents = Array[StringName]([&"power_cord_3m"])
+online_income_per_hour = 4
 model_path = "res://assets/models/compute/server_1u_entry.glb"

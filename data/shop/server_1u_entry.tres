@@ -1,0 +1,50 @@
+[gd_resource type="Resource" script_class="ShopListing" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/shop_listing.gd" id="1_4dwnc"]
+
+[resource]
+script = ExtResource("1_4dwnc")
+item_id = &"server_1u_entry"
+title = "Nodex NX-1 — Servidor de rack 1U de entrada con 2 puertos de red Gigabit y cable de alimentación incluido"
+bullets = PackedStringArray("Formato 1U de 19\": ocupa una sola unidad del rack.", "2 puertos de red RJ45 Gigabit y la entrada de alimentación, en la trasera.", "Botón de encendido en el frontal; arranca en un minuto y medio.", "Incluye un cable de alimentación de 3 m.", "Sistema operativo de servidor preinstalado: se administra desde su consola local con el usuario root.")
+description = "El NX-1 es un servidor pensado para aprender: compacto, sencillo y con lo justo para empezar a montar servicios en casa.
+
+Viene sin dirección IP configurada. Al encenderlo, abre su consola local (en el panel del rack, botón «Consola») y asígnale una IP libre de tu red con la orden ip. Desde ese momento ya puedes comprobar con ping que tu PC y el servidor se ven.
+
+Recuerda que necesita corriente: conecta su cable a una toma libre de la regleta y pulsa el botón de encendido."
+reviews = Array[Dictionary]([{
+"author": "Pablo D.",
+"date": "hace 1 semana",
+"stars": 5,
+"text": "Llegó bien embalado, con su cable de corriente. Lo monté, le puse una IP fija desde la consola y respondió al ping a la primera.",
+"title": "Mi primer servidor",
+"verified": true
+}, {
+"author": "Alba C.",
+"date": "hace 3 semanas",
+"stars": 4,
+"text": "Tarda un minuto y medio en arrancar. Solo trae dos puertos de red, pero para empezar sobra.",
+"title": "Cumple de sobra",
+"verified": true
+}, {
+"author": "Sergio L.",
+"date": "hace 1 mes",
+"stars": 2,
+"text": "Trae uno de 3 m y mi rack está lejos de la regleta: tuve que pedir uno de 5 m. Podrían avisarlo más claro.",
+"title": "El cable de corriente se queda corto",
+"verified": true
+}, {
+"author": "Carmen V.",
+"date": "hace 2 meses",
+"stars": 5,
+"text": "No coge dirección él solo: hay que ponérsela desde la consola con ip address. Una vez hecho, perfecto.",
+"title": "No olvides la IP",
+"verified": true
+}, {
+"author": "Raúl T.",
+"date": "hace 4 días",
+"stars": 4,
+"text": "Para aprender redes y Linux en casa es más que suficiente.",
+"title": "Buena relación calidad-precio",
+"verified": false
+}])

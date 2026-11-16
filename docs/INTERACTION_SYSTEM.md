@@ -165,9 +165,23 @@ Las reglas (compatibilidad, longitud, velocidad, estado del enlace) son de la si
 - en un rack, baja por el poste de esa cara más cercano al destino;
 - un equipo sobre un mueble, como el router, lleva el cable por encima hasta el borde y lo baja por delante.
 
-**Por el suelo:**
-- Camino más corto en una rejilla de 2,5 cm (`AStarGrid2D` de Godot), tensado después para que abrace las esquinas.
-- Rodea, con 1,2 cm de margen: la cama, las patas y la cajonera del escritorio, el mueble del router, la base de la silla, los equipos de suelo y la zona de entregas. Pasa bajo el escritorio, entre sus patas.
+**Por el suelo** `[CONFIRMADO: 2026-11-16, ADR 0011]`, no el camino más corto sino uno ordenado, como lo tendería una persona:
+- **Tramos rectos en ángulo recto.** Usa una rejilla de 2,5 cm sin diagonales (`AStarGrid2D` de Godot, heurística Manhattan). Los escalones se pliegan en un solo giro y los quiebros de menos de 4 cm se enderezan.
+- **Por los bordes:**
+  - pegado a paredes, muebles y equipos, o bajo un mueble, cuesta 1;
+  - el suelo libre por donde se camina cuesta 3 `[PROPUESTA: cifra]`;
+  - el suelo libre solo se cruza cuando hace falta y por el tramo más corto.
+- **Holgura de 1,5 cm** con todo: la cama, las patas y la cajonera del escritorio, el mueble del router, la base de la silla y los equipos de suelo. Cubre el radio del cable dibujado y sus curvas. El cable va por delante del rodapié y pasa bajo el escritorio, entre sus patas.
+- **Zonas prohibidas:** la zona de entregas y el paso de la puerta (`BedroomScenario.DOOR_ZONE`). Tampoco se puede colocar nada en el paso de la puerta.
+- **Si el cable no llega por el camino ordenado,** se usa el más compacto, que sigue en ángulo recto y sin chocar.
+- **Cualquier sala:** las reglas dependen solo de los datos de la sala (límites, rodapié, muebles, zonas prohibidas). Se prueba con una sala sintética en `tests/unit/test_cable_router.gd`.
+- **Cables que comparten tramo** (`game/cabling/cable_renderer.gd`) nunca se dibujan uno dentro de otro:
+  - en el suelo, el que llega después se apoya encima del otro y no baja hasta haberse separado 3 cm;
+  - si varios bajan por el mismo sitio y se van en sentidos opuestos, cada uno baja medio carril hacia su lado;
+  - si se van en el mismo sentido, bajan en carriles paralelos (2 cm) y siguen así hasta la primera curva;
+  - tras un tramo largo sobre un mueble (el router en su mueble), cada cable baja delante de su propia toma;
+  - en la regleta, el que pasa por encima de otras tomas ocupadas va un carril más alto;
+  - hacia un poste del rack, el cable sale un carril más lejos del frontal, por delante de los latiguillos.
 
 **Entre dos equipos del mismo rack:**
 - misma cara: el cable va por delante;
@@ -178,18 +192,20 @@ Las reglas (compatibilidad, longitud, velocidad, estado del enlace) son de la si
 
 **Consecuencias:**
 - **Cables iniciales:** el cable de red del PC al router y el de corriente del router son de 5 m. Se añadió `power_cord_5m` al catálogo.
-- **Misión:** desde un rack en medio de la habitación, el enlace al router suele pedir el cable de 5 m.
+- **Misión:** desde un rack en medio de la habitación, el enlace al router suele pedir el cable de 5 m. Con los recorridos ordenados (2026-11-16), los cables de corriente de 3 m que traen los equipos llegan si la trasera del rack queda hacia el escritorio y la regleta; desde la otra punta de la habitación hace falta el de 5 m, y la vista previa lo avisa (longitud redondeada hacia arriba).
 
 **Sin recorrido:** si no existe ninguno, la conexión se rechaza y se explica.
 
 **Dibujo:**
-- Tubo con esquinas redondeadas y marcos sin torsión.
+- Tubo con esquinas redondeadas (3 cm) y marcos sin torsión.
 - Más grueso que un cable real (8–9,5 mm de radio) para que se vea en la vista general.
 - Se redibuja en cada cambio (mover, desconectar, recoger, cargar).
 
 **Comprobado:**
 - un barrido de posiciones del rack por los cuatro giros: ningún cable cruza nada (`tests/integration/test_rack_placement.gd`);
-- en el recorrido, cada punto de cada cable dibujado se consulta contra los colisionadores físicos y no puede estar dentro de un sólido ajeno.
+- en el recorrido automático, una esfera del radio del cable recorre cada cable dibujado cada centímetro y no puede tocar ningún sólido ajeno (muebles, paredes, rodapié, otros equipos);
+- en el recorrido, además, ningún equipo, el monitor, el teclado ni la pila de cajas atraviesa otro objeto (colisionadores reducidos 1 cm);
+- y ningún cable atraviesa a otro: cada par de cables, muestreados cada centímetro, se mantiene a más del 75 % de la suma de sus radios (los tubos dibujados tienen 8 caras).
 
 **Representación visual `[SPIKE]` S4:**
 - Cada cable es una malla de tubo generada a partir de una `Curve3D` con caída (catenaria aproximada), con pocos lados (6) y segmentos según la longitud.
@@ -197,6 +213,23 @@ Las reglas (compatibilidad, longitud, velocidad, estado del enlace) son de la si
 - En vista general muchos cables se simplifican.
 - Clases necesarias, presentes en 4.7.2: `Curve3D` (`sample_baked`, `get_baked_length`) y `SurfaceTool` / `ImmediateMesh`.
 - El spike mide el coste con 50 y 200 cables.
+
+### 9.2. Implementado (2026-11-16): cableado guiado `[CONFIRMADO: 2026-11-16, ADR 0011]`
+
+- **Paso 1 de 2:** al elegir un cable en el inventario, un panel con borde turquesa dice qué buscar:
+  - cable de red: un puerto RJ45 libre;
+  - cable de corriente: una toma libre de la regleta o la entrada de alimentación de un equipo.
+
+  En la vista general, una flecha flota sobre cada equipo con una toma compatible libre. En la vista cercana, esas tomas brillan.
+- **Paso 2 de 2:** con un extremo conectado, el panel dice dónde va el otro. Las tomas compatibles brillan en verde si el cable llega y en naranja si no. Al pasar el ratón, se ve la longitud que haría falta.
+- **Cancelar:**
+  - Esc en la vista general, o el botón «Cancelar cable»;
+  - también al empezar otra cosa: sentarse al ordenador, abrir la consola, colocar o mover un objeto, abrir una caja o montar un equipo.
+- **Al cancelar,** el extremo conectado se suelta y el cable vuelve al inventario, con un aviso.
+- **No cancelan:** caminar ni acercarse a otro equipo, porque son parte de cablear (decisión 12).
+- **Reglas:** están en la simulación (`SimWorld.cable_port_problem`, `cable_reach`, `compatible_ports`, `cancel_cable`), con pruebas en `tests/integration/test_cable_guidance.gd`.
+
+- Rodea, con 1,2 cm de margen: la cama, las patas y la cajonera del escritorio, el mueble del router, la base de la silla, los equipos de suelo y la zona de entregas. Pasa bajo el escritorio, entre sus patas.
 
 ## 10. Separación datos/vista (para no duplicar lógica)
 

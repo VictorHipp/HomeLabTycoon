@@ -1,6 +1,6 @@
 # PROGRESSION — Economía, niveles, competencias, etapas y misiones
 
-> **Estado:** diseño; nada implementado. Requisitos `[CONFIRMADO]` (documento maestro §4, §5, §19, §20, §22, y respuesta del usuario del 2026-11-15: juego **extenso**, con muchas partes, puntos y recompensas, y **las recompensas sirven para comprar material nuevo**). Diseño concreto (listas, cifras, validadores) `[PROPUESTA]`. La estructura de una carrera larga está en §10.
+> **Estado:** diseño; implementado lo de §8.1 (economía del prototipo) y la misión de §9. Requisitos `[CONFIRMADO]` (documento maestro §4, §5, §19, §20, §22, y respuesta del usuario del 2026-11-15: juego **extenso**, con muchas partes, puntos y recompensas, y **las recompensas sirven para comprar material nuevo**). Diseño concreto (listas, cifras, validadores) `[PROPUESTA]`. La estructura de una carrera larga está en §10.
 
 ## 1. Requisitos `[CONFIRMADO]`
 
@@ -124,9 +124,33 @@ MissionDefinition (data/missions/*.tres)
   4. comprobar que ninguna ruta domina y que cada etapa tiene un cuello de botella distinto.
 - **Errores caros reversibles:** vender con pérdida, deshacer la colocación. El dinero negativo bloquea compras, no la partida.
 
+### 8.1. Implementado (2026-11-16) `[CONFIRMADO: 2026-11-16, ADR 0010]` · cifras `[PROPUESTA]`
+
+Pedido por el usuario: que los puntos tengan lógica y control, que haya unos pocos ingresos pasivos con los servicios en marcha y que se pueda vender lo comprado.
+
+| Pieza | Qué hace | Dónde |
+|---|---|---|
+| **Libro de movimientos** | Cada cambio de créditos o XP deja una línea con su motivo (ahorros iniciales, pedido, objetivo cumplido, misión, venta, ingresos pasivos). La suma de las líneas es el saldo | `sim/economy/economy.gd`; app «Mi cuenta» del PC; avisos «+N cr» / «−N cr» y «+N XP» en el HUD |
+| **XP por objetivo** | Cada requisito da su XP (10) la primera vez que se cumple; deshacerlo y rehacerlo no da más. La misión da 70 al completarse: 150 en total, como antes | `MissionRequirement.xp`, `MissionTracker.rewarded` |
+| **Créditos iniciales** | 1000, para un material mínimo de 808 (rack 220, switch 90, servidor 480 y dos latiguillos): «poco margen», como dice §9 | `BedroomScenario.START_CREDITS`, `budget_note` |
+| **Ingresos pasivos** | 4 cr por hora de juego por cada servidor encendido y accesible en los dos sentidos desde el PC. Se cobran a la hora en punto y hay un tope de 60 cr al día entre todos | `HardwareDefinition.online_income_per_hour`; `data/economy/economy_rules.tres` |
+| **Segunda mano** | Vende lo que compraste en la tienda y está en el inventario (lo de la casa no): 60 % del precio sin estrenar, 45 % usado (instalado o conectado alguna vez). Pide confirmación y necesita el PC conectado | `SimWorld.sell_device`; app «Segunda mano» |
+
+**Control:**
+- comprar y revender siempre pierde, también contando los accesorios de la caja;
+- esperar entregas una y otra vez nunca da más que el tope diario;
+- el libro cuadra con el saldo;
+- una partida v1 se carga sin volver a dar XP.
+
+Todo está en `tests/integration/test_economy.gd`.
+
+**Honestidad:** los servidores aún no ejecutan servicios simulados. El ingreso pasivo depende de que el equipo esté encendido y en la red, y así se dice en el juego.
+
+**Pendiente:** la XP y el nivel todavía no desbloquean nada (§10.3); hoy solo miden el progreso.
+
 ## 9. Misión del prototipo: «Primer servidor» `[CONFIRMADO: decisión 8, 2026-11-15]`
 
-> **Implementada** en `data/missions/first_server.tres` con 8 requisitos (los de la tabla, con «Enciende el switch y el servidor» y «Monta…» separados) y validada en `tests/integration/test_first_mission.gd`. Recompensa real: 600 créditos y 150 XP (el jugador pasa a nivel 2).
+> **Implementada** en `data/missions/first_server.tres` con 8 requisitos (los de la tabla, con «Enciende el switch y el servidor» y «Monta…» separados) y validada en `tests/integration/test_first_mission.gd`. Recompensa real: 600 créditos y 150 XP (10 por cada requisito la primera vez que se cumple y 70 al completarla; el jugador pasa a nivel 2). Créditos iniciales: 1000 (§8.1).
 
 > Contexto: quieres montar tu primer servidor en casa para empezar tu homelab.
 

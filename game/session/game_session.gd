@@ -10,6 +10,7 @@ const MONITOR_POSITION := Vector3(0.40, 0.75, -1.30)
 const KEYBOARD_POSITION := Vector3(0.40, 0.75, -1.02)
 const CHARACTER_START := Vector3(0.35, 0.0, 0.55)
 const HUD_REFRESH_SECONDS := 0.25
+const CLICK_MARKER_SECONDS := 0.55
 const CAMERA_ROOM_MARGIN := 0.12 ## Close-up cameras never go closer than this to a wall.
 const STAND_ROOM_MARGIN := 0.25 ## Stand points stay on walkable floor (agent radius 0.2).
 
@@ -24,6 +25,7 @@ var screen: ComputerScreen
 var interaction: InteractionManager
 var menu: GameMenu
 var cables: CableRenderer
+var click_fx: ClickFeedback ## Rings under the cursor on every click; red when it did nothing.
 var device_views: Dictionary = {} ## device id -> DeviceView
 var package_stack: PackageView ## All waiting boxes, stacked in the delivery zone.
 var monitor: Node3D
@@ -32,6 +34,7 @@ var pc_id: int = -1
 var _views_dirty: bool = true
 var _hud_timer: float = 0.0
 var _click_marker: MeshInstance3D
+var _click_marker_time: float = 0.0
 
 ## A loaded save waiting for the scene to be rebuilt (load = reload the scene, so no view or
 ## panel keeps state from the previous game).
@@ -91,6 +94,15 @@ func _ready() -> void:
 	hud.menu_requested.connect(menu.open.bind(&"controls"))
 	screen.menu_requested.connect(menu.open.bind(&"controls"))
 	_build_click_marker()
+	click_fx = ClickFeedback.new()
+	click_fx.name = "ClickFeedback"
+	add_child(click_fx)
+	hud.toast_shown.connect(func(ok: bool) -> void:
+		if not ok:
+			click_fx.reject())
+	screen.message_shown.connect(func(ok: bool) -> void:
+		if not ok:
+			click_fx.reject())
 	world.event_emitted.connect(_on_world_event)
 	_sync_views()
 	hud.refresh()
@@ -171,8 +183,12 @@ func _process(delta: float) -> void:
 		hud.refresh()
 		screen.refresh()
 	if _click_marker.visible:
-		_click_marker.scale *= 0.94
-		if _click_marker.scale.x < 0.1:
+		_click_marker_time += delta
+		var k := clampf(_click_marker_time / CLICK_MARKER_SECONDS, 0.0, 1.0)
+		_click_marker.scale = Vector3.ONE * lerpf(0.4, 1.25, 1.0 - pow(1.0 - k, 3.0))
+		var mat := _click_marker.material_override as StandardMaterial3D
+		mat.albedo_color.a = 1.0 - k
+		if k >= 1.0:
 			_click_marker.visible = false
 
 
@@ -190,8 +206,20 @@ func _on_world_event(type: StringName, data: Dictionary) -> void:
 			var d := world.get_device(data["device_id"])
 			if d.definition.has_power_button or d.definition.category == &"switch":
 				hud.show_toast(TranslationServer.translate("%s está encendido.") % d.display_name())
+		&"money_changed":
+			var delta: int = data.get("delta", 0)
+			if delta != 0:
+				hud.float_delta(("+%d cr" if delta > 0 else "−%d cr") % absi(delta), delta > 0)
+		&"xp_changed":
+			var gained: int = data.get("delta", 0)
+			if gained > 0:
+				hud.float_delta("+%d XP" % gained, true)
+			if data.get("level_up", false):
+				hud.show_toast(TranslationServer.translate("¡Subes a nivel %d!") % data["level"])
+			elif gained > 0 and String(data.get("text", "")) != "":
+				hud.show_toast("%s · +%d XP" % [data["text"], gained])
 		&"mission_completed":
-			hud.show_banner(TranslationServer.translate("¡Misión completada!\n«%s»\n\n+%d créditos · +%d XP\n\nTu PC y tu primer servidor ya se comunican a través del switch.\nFin de la prueba de la primera misión: puedes seguir experimentando.") % [world.mission.definition.title, data["credits"], data["xp"]])
+			hud.show_banner(TranslationServer.translate("¡Misión completada!\n«%s»\n\n+%d créditos · +%d XP\n\nTu PC y tu primer servidor ya se comunican a través del switch.\nMientras siga encendido y en la red, el servidor te dará unos pocos créditos por hora (mira «Mi cuenta» en el PC).\nFin de la prueba de la primera misión: puedes seguir experimentando.") % [world.mission.definition.title, data["credits"], data["xp"]])
 	if interaction != null:
 		interaction.refresh_panel()
 
@@ -308,9 +336,32 @@ func rack_anchor(rack_id: int, rear: bool) -> Transform3D:
 	var c := bounds.get_center()
 	var face := rack_view.global_transform * Vector3(c.x, c.y, bounds.position.z if rear else bounds.end.z)
 	var origin := clamp_to_room(anchor.origin, CAMERA_ROOM_MARGIN)
-	if origin.is_equal_approx(anchor.origin):
+	var clear := _clear_view(face, origin, rack_id)
+	if clear.is_equal_approx(anchor.origin):
 		return anchor
-	return Transform3D(Basis.looking_at(face - origin, Vector3.UP), origin)
+	return Transform3D(Basis.looking_at(face - clear, Vector3.UP), clear)
+
+
+## A camera position from which `target` is seen without furniture or other devices in between
+## (a chair or a desk behind the rack): the wanted `origin` if it is clear, otherwise closer to
+## the target and / or higher. The rack itself and what is mounted in it do not count.
+func _clear_view(target: Vector3, origin: Vector3, rack_id: int) -> Vector3:
+	var exclude: Array[RID] = []
+	var rack := world.get_device(rack_id)
+	for d: SimDevice in [rack] + world.mounted_in(rack):
+		var view := device_views.get(d.id) as DeviceView
+		if view != null:
+			exclude.append(view.body.get_rid())
+	var space := get_world_3d().direct_space_state
+	for lift: float in [0.0, 0.2, 0.4, 0.65]:
+		for pull: float in [1.0, 0.85, 0.7, 0.55]:
+			var candidate := target + (origin - target) * pull + Vector3(0.0, lift, 0.0)
+			var query := PhysicsRayQueryParameters3D.create(target, candidate, Layers.FURNITURE | Layers.DEVICES | Layers.WALLS)
+			query.exclude = exclude
+			query.hit_from_inside = true
+			if space.intersect_ray(query).is_empty():
+				return candidate
+	return origin
 
 
 ## `point` moved horizontally inside the room, `margin` metres away from the walls.
@@ -361,9 +412,16 @@ func create_rack_slots(rack_id: int) -> Array[Area3D]:
 	return result
 
 
-func spawn_click_marker(point: Vector3) -> void:
-	_click_marker.global_position = point + Vector3(0.0, 0.01, 0.0)
-	_click_marker.scale = Vector3.ONE
+## Ring on the floor where the player clicked: it opens and fades. Teal when the character goes
+## there, red when it cannot get there.
+func spawn_click_marker(point: Vector3, ok: bool = true) -> void:
+	_click_marker.global_position = point + Vector3(0.0, 0.015, 0.0)
+	_click_marker.scale = Vector3.ONE * 0.4
+	_click_marker_time = 0.0
+	var mat := _click_marker.material_override as StandardMaterial3D
+	var color := UiStyle.HIGHLIGHT if ok else UiStyle.BAD
+	mat.albedo_color = color
+	mat.emission = color
 	_click_marker.visible = true
 
 
@@ -451,13 +509,16 @@ func _build_delivery_zone() -> void:
 func _build_click_marker() -> void:
 	_click_marker = MeshInstance3D.new()
 	var ring := TorusMesh.new()
-	ring.inner_radius = 0.12
-	ring.outer_radius = 0.16
+	ring.inner_radius = 0.13
+	ring.outer_radius = 0.155
 	_click_marker.mesh = ring
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = UiStyle.HIGHLIGHT
 	mat.emission_enabled = true
 	mat.emission = UiStyle.HIGHLIGHT
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_click_marker.material_override = mat
+	_click_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_click_marker.visible = false
 	add_child(_click_marker)

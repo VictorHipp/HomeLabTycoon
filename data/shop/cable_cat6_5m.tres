@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="ShopListing" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/shop_listing.gd" id="1_cd1nq"]
+
+[resource]
+script = ExtResource("1_cd1nq")
+item_id = &"cable_cat6_5m"
+title = "Cablecraft Cat6 5 m — Latiguillo de red RJ45 Cat6 largo, para cruzar la habitación siguiendo la pared"
+bullets = PackedStringArray("Conectores RJ45 en los dos extremos.", "Categoría 6: enlaces Gigabit (1 Gb/s).", "5 m: llega del rack al router de casa casi desde cualquier rincón de una habitación.", "Funda azul, fácil de distinguir de los cables de corriente.")
+description = "El cable largo para llevar la red de un lado a otro de la habitación, por el suelo y pegado a paredes y muebles, sin cruzar por donde se camina.
+
+Es el que suele hacer falta para enlazar el switch del rack con el router de casa."
+reviews = Array[Dictionary]([{
+"author": "Carmen V.",
+"date": "hace 5 días",
+"stars": 5,
+"text": "Lo llevé por detrás del escritorio, junto a la pared, y aún sobró un poco.",
+"title": "Del rack al router sin problema",
+"verified": true
+}, {
+"author": "Hugo F.",
+"date": "hace 3 semanas",
+"stars": 4,
+"text": "Más vale que sobre que que falte. Buena calidad.",
+"title": "Largo de verdad",
+"verified": true
+}, {
+"author": "Nerea S.",
+"date": "hace 1 mes",
+"stars": 5,
+"text": "Para el enlace con el router es el que necesitas.",
+"title": "Imprescindible",
+"verified": false
+}])

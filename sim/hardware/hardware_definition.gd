@@ -32,6 +32,11 @@ extends Resource
 @export var specs: Array[Resource] = [] ## DeviceSpec subclasses (RackSpec, HostSpec, ...).
 @export var box_contents: Array[StringName] = [] ## Extra catalog ids delivered in the same box.
 
+@export_group("Economy")
+## Credits per game hour while it is running and reachable from the player's computer
+## (passive income, docs/PROGRESSION.md §8; ADR 0010). 0 = earns nothing.
+@export var online_income_per_hour: int = 0
+
 @export_group("Presentation")
 @export var model_path: String = "" ## res:// path of the .glb; loaded only by the presentation layer.
 

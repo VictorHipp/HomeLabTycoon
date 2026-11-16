@@ -3,8 +3,8 @@ extends TestCase
 ## service clearance in front and behind, warnings for power cable reach, moving a placed rack
 ## with its devices, and picking it up again.
 
-const GOOD_POS := Vector3(0.9, 0.0, 0.5)
-const GOOD_YAW := 90.0 ## Front to the right wall, rear (power) towards the room.
+const GOOD_POS := Vector3(0.2, 0.0, 0.6)
+const GOOD_YAW := 0.0 ## Front to the room, rear (power) towards the desk and the strip.
 const FAR_POS := Vector3(1.45, 0.0, 0.65)
 
 var world: SimWorld
@@ -60,7 +60,7 @@ func test_nothing_may_be_placed_in_a_rack_service_zone() -> void:
 	for package_id: int in world.packages.keys():
 		world.open_package(package_id)
 	var second := _inventory(&"rack_12u_open")
-	var spot := Vector3(0.0, 0.0, 0.5) # behind the first rack, not touching it
+	var spot := Vector3(0.2, 0.0, -0.01) # behind the first rack, not touching it nor the chair
 	var rect := SimWorld.footprint_rect(second.definition, spot, 0.0)
 	assert_true(rect.intersects(zones[0]) or rect.intersects(zones[1]), "spot overlaps a working zone")
 	assert_contains(world.placement_problem(second.id, spot, 0.0), "espacio de trabajo", "keeps the first rack reachable")
@@ -152,6 +152,7 @@ func _assert_route_clean(cable_id: int, label: String) -> void:
 	var blocked: Array[Rect2] = []
 	blocked.assign(world.cable_obstacles)
 	blocked.append(world.delivery_zone)
+	blocked.append_array(world.door_zones)
 	for d: SimDevice in world.devices.values():
 		if d.location in [&"placed", &"fixed"] and d.definition.placement == &"floor":
 			blocked.append(SimWorld.footprint_rect(d.definition, d.position, d.yaw_degrees))

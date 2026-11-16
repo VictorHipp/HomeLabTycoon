@@ -2,9 +2,9 @@ extends TestCase
 ## The first mission played only through simulation commands (docs/TEST_PLAN.md H7-01):
 ## two different valid solutions, and one negative case per requirement.
 
-## Same spot as the automated walkthrough: front towards the right wall, rear towards the room.
-const RACK_POS := Vector3(0.9, 0.0, 0.5)
-const RACK_YAW := 90.0 ## Rear (power) towards the room: the 3 m cords that come with the equipment reach the strip.
+## Same spot as the automated walkthrough: front towards the room, rear towards the desk.
+const RACK_POS := Vector3(0.2, 0.0, 0.6)
+const RACK_YAW := 0.0 ## Rear (power) towards the desk: the 3 m cords that come with the equipment reach the strip.
 
 var world: SimWorld
 

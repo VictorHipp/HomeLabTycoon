@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="ShopListing" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/shop_listing.gd" id="1_uqytt"]
+
+[resource]
+script = ExtResource("1_uqytt")
+item_id = &"cable_cat6_3m"
+title = "Cablecraft Cat6 3 m — Latiguillo de red RJ45 Cat6, para equipos cercanos de la misma habitación"
+bullets = PackedStringArray("Conectores RJ45 en los dos extremos.", "Categoría 6: enlaces Gigabit (1 Gb/s).", "3 m: para equipos cercanos, por ejemplo del rack al PC si están cerca.", "Funda azul, fácil de distinguir de los cables de corriente.")
+description = "Un latiguillo de longitud media para conectar equipos que están cerca pero no en el mismo rack.
+
+Calcula el recorrido real: el cable no cruza la habitación en línea recta, sino que baja al suelo y sigue paredes y muebles hasta el otro equipo. Si no llega, el juego te dirá cuántos metros harían falta."
+reviews = Array[Dictionary]([{
+"author": "Alba C.",
+"date": "hace 2 semanas",
+"stars": 4,
+"text": "Del rack al PC me llegó justo, siguiendo la pared.",
+"title": "Para lo que está cerca",
+"verified": true
+}, {
+"author": "Pablo D.",
+"date": "hace 1 mes",
+"stars": 5,
+"text": "Enlace a 1 Gb/s y bien rematado.",
+"title": "Sin sorpresas",
+"verified": true
+}, {
+"author": "Sergio L.",
+"date": "hace 2 meses",
+"stars": 3,
+"text": "Pensé que llegaba al router y me faltaba casi un metro. Compré el de 5 m.",
+"title": "Mide bien antes",
+"verified": true
+}])

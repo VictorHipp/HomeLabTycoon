@@ -18,6 +18,14 @@ Simulador 3D de construcción y administración de infraestructura informática.
   - personaje articulado que camina sin deslizar y se sienta en la silla.
 
   Detalle en ROADMAP §1. Si cambia la interfaz, regenera las capturas del manual con `tools\walkthrough.ps1 -Scenario manual` y reimporta.
+- **Tercera ronda (2026-11-16):**
+  - cables por recorridos ordenados (ángulo recto, pegados a bordes, sin cruzar puerta ni entregas) y cableado guiado paso a paso que se cancela al cambiar de tarea ([ADR 0011](docs/adr/0011-guided-cabling-and-tidy-routes.md));
+  - respuesta visual a cada clic;
+  - economía con libro de movimientos, XP por objetivo, ingresos pasivos con tope y segunda mano ([ADR 0010](docs/adr/0010-economy-ledger-passive-income-resale.md));
+  - tienda «Rackwell & Cía.» con fotos de los modelos (`tools\capture_shop_photos.ps1`), fichas y opiniones (`data/shop/`);
+  - guardado v2.
+
+  Si cambia un modelo de la tienda, regenera sus fotos con `tools\capture_shop_photos.ps1`.
 - **Hito 1 (habitación, cámara y movimiento):** sus tareas 1–7 están hechas dentro de la prueba jugable.
   - **Hecho:** habitación, director de cámara, vista general con giro por ratón, corte automático de paredes, personaje con navegación y aviso de inalcanzable, iluminación y estilo aprobados, y `GameSession` con `SimWorld` y reloj.
   - **Pendiente para cerrarlo:**
@@ -30,10 +38,10 @@ Simulador 3D de construcción y administración de infraestructura informática.
   - **Terminal:** los textos de error de la terminal están `[POR VERIFICAR]`, no emulan el idioma del sistema simulado y no usan claves de traducción.
   - **Manual del juego y cuaderno:** son cosas distintas. Existe el manual (cómo jugar, `data/manual/es/`); el cuaderno técnico del Hito 7 (H7-03) sigue sin hacer.
 - **Código existente:**
-  - `sim/`: simulación pura (mundo, catálogo, red, cables, terminal, misiones y guardado);
-  - `data/`: catálogo, misión y manual;
+  - `sim/`: simulación pura (mundo, catálogo y fichas de tienda, red, cables, terminal, misiones, economía y guardado);
+  - `data/`: catálogo, fichas de la tienda, reglas de economía, misión y manual;
   - `game/`: presentación;
-  - `tests/`: 56 pruebas sin ventana, *smoke test* y comprobación de modelos;
+  - `tests/`: 74 pruebas sin ventana, *smoke test* y comprobación de modelos;
   - `tools/`: scripts.
 
   Detalle en `docs/ARCHITECTURE.md` y en ROADMAP §1.

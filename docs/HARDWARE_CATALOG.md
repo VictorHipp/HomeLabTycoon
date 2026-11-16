@@ -123,6 +123,28 @@ Un `CatalogRegistry`, propiedad del `SimWorld` ([ARCHITECTURE.md](ARCHITECTURE.m
 - **Conexión `[PROPUESTA]`:** la tienda necesita que el PC tenga **conectividad a Internet simulada**. Si el router doméstico está desconectado, la tienda dice «Sin conexión». El simulador de red se nota desde el primer minuto.
 - **Prototipo (Hito 3):** lista por categorías, ficha, carrito y pago. Buscador, filtros y comparador vienen después.
 
+### 4.1. Implementado (2026-11-16): tienda «Rackwell & Cía.» `[CONFIRMADO: 2026-11-16]`
+
+El usuario pidió una tienda al estilo de las grandes tiendas online: con imágenes, opiniones inventadas y descripciones más completas. Tiene identidad propia: no usa marcas reales.
+
+- **Catálogo:**
+  - tarjetas con foto, título largo, valoración con estrellas, precio, plazo de entrega y «Ya tienes N»;
+  - buscador por texto y categorías (Racks, Servidores, Redes, Cables);
+  - botón «Añadir a la cesta».
+- **Ficha del producto:**
+  - galería de dos fotos;
+  - «Acerca de este producto»;
+  - caja de compra con notas de compatibilidad calculadas con lo que tiene el jugador (unidades libres en el rack, tomas libres en la regleta, puertos RJ45 libres);
+  - **Especificaciones**, generadas desde la `HardwareDefinition` (`game/computer/shop_specs.gd`), incluidos el consumo, el arranque, el sistema, los ingresos en línea y el precio de reventa;
+  - «En la caja», generado desde `box_contents`;
+  - descripción;
+  - opiniones de clientes, con el reparto por estrellas.
+- **Cesta:** cantidades «−» y «+», total, saldo antes y después, y «Tramitar pedido».
+- **Datos de cada ficha:** `data/shop/<id>.tres` (`ShopListing`) guarda el título largo, los puntos clave, la descripción y las opiniones. Son ficticias, sin cifras técnicas propias. La valoración es la media de las opiniones listadas. `Catalog.validate()` exige una ficha por producto a la venta.
+- **Fotos:**
+  - renders de los propios modelos del juego (`tools\capture_shop_photos.ps1` → `assets/shop/<id>_1.png` y `_2.png`);
+  - los cables, que no tienen modelo, salen como una bobina con el mismo tubo y color que en la habitación y con sus conectores.
+
 ## 5. Pedidos, entregas e inventario
 
 ### 5.1. Estado del pedido `[PROPUESTA]`

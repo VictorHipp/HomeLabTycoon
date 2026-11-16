@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="ShopListing" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/shop_listing.gd" id="1_pb5al"]
+
+[resource]
+script = ExtResource("1_pb5al")
+item_id = &"power_cord_3m"
+title = "Voltara cable de alimentación IEC de 3 m — Para conectar servidores y switches a la regleta"
+bullets = PackedStringArray("Conecta la entrada de alimentación de un equipo con una toma de la regleta.", "3 m: suficiente si el rack está cerca de la regleta.", "Funda negra, distinta de los cables de red.", "Es el mismo cable que traen el servidor y el switch en su caja.")
+description = "Un cable de corriente de repuesto, igual al que traen los equipos de rack.
+
+Un extremo va a una toma libre de la regleta y el otro a la entrada de alimentación del equipo (en los equipos de rack, en la trasera). Como los demás cables, va por el suelo siguiendo paredes y muebles."
+reviews = Array[Dictionary]([{
+"author": "Elena B.",
+"date": "hace 1 semana",
+"stars": 5,
+"text": "Igual que el que venía con el switch.",
+"title": "Repuesto perfecto",
+"verified": true
+}, {
+"author": "Iván R.",
+"date": "hace 1 mes",
+"stars": 4,
+"text": "Del rack a la regleta me llega con el rack cerca.",
+"title": "Correcto",
+"verified": true
+}, {
+"author": "Lucía P.",
+"date": "hace 2 meses",
+"stars": 3,
+"text": "Con el rack al otro lado no llega. Para eso, el de 5 m.",
+"title": "Corto para mi cuarto",
+"verified": true
+}])

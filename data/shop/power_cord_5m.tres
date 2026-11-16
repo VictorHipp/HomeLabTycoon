@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="ShopListing" format=3]
+
+[ext_resource type="Script" path="res://sim/hardware/shop_listing.gd" id="1_8dn31"]
+
+[resource]
+script = ExtResource("1_8dn31")
+item_id = &"power_cord_5m"
+title = "Voltara cable de alimentación IEC de 5 m — Para equipos alejados de la regleta"
+bullets = PackedStringArray("Conecta la entrada de alimentación de un equipo con una toma de la regleta.", "5 m: para cuando el rack queda lejos de la regleta.", "Funda negra, distinta de los cables de red.")
+description = "La versión larga del cable de alimentación, para cuando el equipo no está junto a la regleta.
+
+Si al conectar un cable el juego te dice que no llega, aquí tienes la solución, aunque a veces basta con acercar el rack a la regleta."
+reviews = Array[Dictionary]([{
+"author": "Pablo D.",
+"date": "hace 2 semanas",
+"stars": 5,
+"text": "El de 3 m no llegaba a la regleta. Con este, sin problema.",
+"title": "Me salvó",
+"verified": true
+}, {
+"author": "Alba C.",
+"date": "hace 1 mes",
+"stars": 4,
+"text": "Va bien pegado a la pared.",
+"title": "Largo y flexible",
+"verified": true
+}, {
+"author": "Raúl T.",
+"date": "hace 3 meses",
+"stars": 4,
+"text": "Ni más ni menos.",
+"title": "Lo que esperaba",
+"verified": false
+}])

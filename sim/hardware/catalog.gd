@@ -4,14 +4,17 @@ extends RefCounted
 ## and validates the rules of §9.
 
 const CATALOG_DIR := "res://data/catalog"
+const SHOP_DIR := "res://data/shop" ## One ShopListing per purchasable item (file name = id).
 const KNOWN_CATEGORIES: PackedStringArray = ["rack", "server", "switch", "router", "computer", "cable", "power"]
 
 var items: Dictionary = {} ## StringName -> HardwareDefinition
+var listings: Dictionary = {} ## StringName -> ShopListing (shop pages)
 
 
 static func load_default() -> Catalog:
 	var catalog := Catalog.new()
 	catalog.load_dir(CATALOG_DIR)
+	catalog.load_listings(SHOP_DIR)
 	return catalog
 
 
@@ -30,6 +33,26 @@ func load_dir(dir_path: String) -> void:
 			push_error("Catalog: %s is not a HardwareDefinition" % res_file)
 			continue
 		items[def.id] = def
+
+
+## Shop pages (ShopListing) of res://data/shop/; an item without one is reported by validate().
+func load_listings(dir_path: String) -> void:
+	var dir := DirAccess.open(dir_path)
+	if dir == null:
+		return
+	for file: String in dir.get_files():
+		var res_file := file.trim_suffix(".remap")
+		if res_file.get_extension() != "tres":
+			continue
+		var listing := load(dir_path.path_join(res_file)) as ShopListing
+		if listing == null:
+			push_error("Catalog: %s is not a ShopListing" % res_file)
+			continue
+		listings[listing.item_id] = listing
+
+
+func get_listing(item_id: StringName) -> ShopListing:
+	return listings.get(item_id) as ShopListing
 
 
 func get_item(item_id: StringName) -> HardwareDefinition:
@@ -87,4 +110,12 @@ func validate() -> Array[String]:
 				problems.append("%s: box content %s does not exist" % [tag, extra])
 		if def.model_path != "" and not ResourceLoader.exists(def.model_path):
 			problems.append("%s: model %s not found" % [tag, def.model_path])
+		if def.online_income_per_hour < 0:
+			problems.append("%s: online income cannot be negative" % tag)
+		if def.purchasable and not listings.has(def.id):
+			problems.append("%s: purchasable items need a shop listing in %s" % [tag, SHOP_DIR])
+	for listing: ShopListing in listings.values():
+		if not items.has(listing.item_id):
+			problems.append("%s: listing of an item that is not in the catalog" % listing.item_id)
+		problems.append_array(listing.problems())
 	return problems

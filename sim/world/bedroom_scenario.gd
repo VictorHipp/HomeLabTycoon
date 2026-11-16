@@ -5,7 +5,9 @@ extends RefCounted
 ## and match the room model (assets/models/rooms/room_bedroom.glb).
 
 const FIRST_MISSION := "res://data/missions/first_server.tres"
-const START_CREDITS := 1500
+## Enough for the mission kit (rack, switch, server, two network cables: 808) with a small margin
+## for mistakes (docs/PROGRESSION.md §9: "poco margen").
+const START_CREDITS := 1000
 const PC_POSITION := Vector3(-0.30, 0.0, -1.22)
 const ROUTER_POSITION := Vector3(1.45, 0.55, -1.30) ## On the small cabinet.
 const ROUTER_YAW := 180.0 ## Rear ports face the room (not the wall or the desk) so they can be reached.
@@ -13,12 +15,15 @@ const STRIP_POSITION := Vector3(-0.30, 0.0, -0.85) ## On the floor in front of t
 ## Inside the entrance, against the front wall and right of the door (door: left wall,
 ## z 0.62..1.42). Clear of the door swing and of the way into the room.
 const DELIVERY_ZONE := Rect2(-0.95, 0.95, 0.60, 0.50)
+## Floor the door needs (left wall, z 0.62..1.42, 0.80 m wide): no object and no cable there.
+const DOOR_ZONE := Rect2(-1.75, 0.57, 0.80, 0.90)
+const SKIRTING_M := 0.015 ## Skirting boards of the room model (build_prototype_models.py).
 
 
 ## A new game.
 static func create(catalog: Catalog = null) -> SimWorld:
 	var world := new_room(catalog)
-	world.credits = START_CREDITS
+	world.grant_rewards(START_CREDITS, 0, &"start", world.tr("Ahorros con los que empiezas"))
 
 	var pc := world.create_device(&"pc_old", &"fixed")
 	pc.position = PC_POSITION
@@ -61,6 +66,8 @@ static func new_room(catalog: Catalog = null) -> SimWorld:
 		Rect2(0.11, -0.92, 0.58, 0.60), # chair
 	])
 	world.delivery_zone = DELIVERY_ZONE
+	world.door_zones.assign([DOOR_ZONE])
+	world.wall_trim_m = SKIRTING_M
 	# What stands on the floor for a cable (measured on the models, tests/integration/test_room_geometry.gd):
 	# bed frame, the four desk legs, the desk drawers, the cabinet and the chair base.
 	world.cable_obstacles.assign([
@@ -69,7 +76,8 @@ static func new_room(catalog: Catalog = null) -> SimWorld:
 		Rect2(1.0775, -1.4425, 0.045, 0.045), Rect2(1.0775, -0.9425, 0.045, 0.045),
 		Rect2(0.70, -1.44, 0.40, 0.50), # desk drawers
 		Rect2(1.18, -1.48, 0.54, 0.40), # cabinet (its top overhangs the body)
-		Rect2(0.11, -0.92, 0.58, 0.60), # chair base
+		# chair base: its five legs reach 0.32 m from the centre (0.40, -0.62) whichever way it turns
+		Rect2(0.07, -0.95, 0.66, 0.66),
 	])
 	return world
 
