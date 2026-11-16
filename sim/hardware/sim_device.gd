@@ -21,6 +21,9 @@ var used: bool = false
 ## Bought in the shop (with its box). Only these can be sold second hand: what the house came
 ## with (PC, router, strip and their cables) was never paid for.
 var bought: bool = false
+## Piece of furniture it stands on or belongs to (the PC and the strip go with the desk, the
+## router with the cabinet it stands on): it moves with that piece. "" = on its own.
+var furniture_id: StringName = &""
 
 
 func _init(device_id: int, def: HardwareDefinition) -> void:
@@ -61,6 +64,7 @@ func save_state() -> Dictionary:
 		"host": host.save_state() if host != null else null,
 		"used": used,
 		"bought": bought,
+		"furniture": String(furniture_id),
 	}
 
 
@@ -83,6 +87,7 @@ static func from_state(data: Dictionary, catalog: Catalog) -> SimDevice:
 	# Saves of version 1 have no "used": anything in the room had been installed.
 	d.used = bool(data.get("used", d.location in [&"placed", &"mounted", &"cabled", &"fixed"]))
 	d.bought = bool(data.get("bought", false)) # version 1: SimWorld.load_state rebuilds it from the orders
+	d.furniture_id = StringName(data.get("furniture", "")) # versions 1-2: BedroomScenario.restore
 	if d.host != null and data.get("host") is Dictionary:
 		d.host.load_state(data["host"])
 	return d

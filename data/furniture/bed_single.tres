@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="FurnitureDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/world/furniture_definition.gd" id="1_furn"]
+
+[resource]
+script = ExtResource("1_furn")
+id = &"bed_single"
+name_text = "la cama"
+blocks = Array[Rect2]([Rect2(-0.49, -1.02, 0.98, 2.04)])
+cable_parts = Array[Rect2]([Rect2(-0.49, -1.02, 0.98, 2.04)])
+area = Rect2(-0.49, -1.02, 0.98, 2.04)
+model_path = "res://assets/models/furniture/bed_single.glb"

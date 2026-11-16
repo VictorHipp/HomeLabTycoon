@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="FurnitureDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/world/furniture_definition.gd" id="1_furn"]
+
+[resource]
+script = ExtResource("1_furn")
+id = &"rug_basic"
+name_text = "la alfombra"
+area = Rect2(-0.85, -0.55, 1.7, 1.1)
+model_path = "res://assets/models/furniture/rug_basic.glb"

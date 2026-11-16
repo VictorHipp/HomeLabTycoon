@@ -7,7 +7,7 @@ extends Node
 
 enum Mode { OVERVIEW, APPROACH, TRANSITION, CLOSEUP, SCREEN, CONSOLE, PLACEMENT }
 
-const HINT_OVERVIEW := "Clic: caminar o usar · Arrastrar con botón derecho o central: girar · Rueda: zoom · WASD: mover la vista · Q/E: girar · F: centrar · Clic derecho en el rack: moverlo"
+const HINT_OVERVIEW := "Clic: caminar o usar · Arrastrar con botón derecho o central: girar · Rueda: zoom · WASD: mover la vista · Q/E: girar · F: centrar · Clic derecho en un mueble, el router o el rack: moverlo"
 const HINT_CLOSEUP := "Esc: volver · R: cara frontal/trasera (rack) · Clic en un puerto: conectar el cable elegido · Clic derecho en un puerto: desconectar"
 const HINT_PLACEMENT := "Clic: colocar · R: girar 90° · Arrastrar con botón derecho: girar la cámara · Esc o clic derecho: cancelar"
 const SNAP := 0.05
@@ -29,6 +29,11 @@ var _hover_port: String = ""
 var _highlight: MeshInstance3D
 var _ghost: Node3D = null
 var _ghost_device: int = -1
+var _ghost_furniture: StringName = &"" ## Piece of furniture being moved (with what it carries).
+var _ghost_top_device: int = -1 ## Small device (router) being put on top of a piece of furniture.
+var _ghost_top_piece: StringName = &"" ## The piece under it (empty: over the floor, not allowed).
+var _problem_key: String = "" ## Furniture checks route every cable: only redone when the spot changes.
+var _problem_cache: String = ""
 var _ghost_yaw: float = 0.0
 var _ghost_pos: Vector3 = Vector3.ZERO
 var _hidden_views: Array[Node3D] = []
@@ -193,19 +198,129 @@ func _click_world(screen_pos: Vector2) -> void:
 		session.spawn_click_marker(hit["position"], ok)
 
 
-## Right click in the overview: move a placed rack directly (no need to walk to it, so a rack
-## that blocks the way can always be moved).
+## Right click in the overview: move a placed rack or a piece of furniture directly (no need to
+## walk to it, so whatever blocks the way can always be moved). The PC, the monitor and the
+## keyboard go with the desk; the router goes from one furniture top to another.
 func _right_click_world(screen_pos: Vector2) -> void:
 	var hit := _ray(screen_pos, Layers.WORLD_PICK)
-	if hit.is_empty() or not (hit["collider"] as Node).has_meta("device_id"):
+	if hit.is_empty():
 		return
-	var d := session.world.get_device((hit["collider"] as Node).get_meta("device_id"))
+	var collider := hit["collider"] as Node
+	if collider.has_meta("furniture_id"):
+		start_furniture_move(collider.get_meta("furniture_id"))
+		return
+	if collider.has_meta("computer_id"):
+		_move_with_furniture(session.world.get_device(collider.get_meta("computer_id")))
+		return
+	if not collider.has_meta("device_id"):
+		# The floor: a rug lies there flat (nothing to hit), so look it up.
+		var flat := session.world.flat_furniture_at(hit["position"])
+		if flat != &"":
+			start_furniture_move(flat)
+		return
+	var d := session.world.get_device(collider.get_meta("device_id"))
 	if d.location == &"mounted":
 		d = session.world.get_device(d.rack_id)
 	if d.location == &"placed":
 		start_move(d.id)
+	elif d.location == &"fixed" and d.definition.placement == &"desk":
+		start_top_move(d.id)
 	elif d.location == &"fixed":
-		session.hud.show_toast(TranslationServer.translate("%s forma parte de la habitación: en esta prueba no se mueve.") % d.display_name(), false)
+		_move_with_furniture(d)
+
+
+## Starts moving a small device (the router) from one furniture top to another. Its cables stay
+## plugged and are laid again from the new spot (or the spot is refused).
+func start_top_move(device_id: int) -> void:
+	var d := session.world.get_device(device_id)
+	if d == null:
+		return
+	_cancel_placement()
+	var note := cable_tool.interrupt(TranslationServer.translate("mover un equipo"))
+	if note != "":
+		session.hud.show_toast(note)
+	_ghost_top_device = device_id
+	_ghost_top_piece = d.furniture_id
+	_ghost_yaw = d.yaw_degrees
+	_ghost_pos = d.position
+	_ghost = ModelUtil.instance_model(d.definition.model_path)
+	for mesh: MeshInstance3D in ModelUtil.find_meshes_with_prefix(_ghost, ""):
+		mesh.transparency = 0.45
+	session.add_child(_ghost)
+	for node: Node3D in [session.device_views.get(device_id) as Node3D, session.cables]:
+		if node != null and node.visible:
+			node.visible = false
+			_hidden_views.append(node)
+	mode = Mode.PLACEMENT
+	session.hud.set_hint(TranslationServer.translate(HINT_PLACEMENT))
+	_update_ghost()
+	_move_ghost(session.get_viewport().get_mouse_position())
+
+
+## A house device moves with the piece of furniture it belongs to.
+func _move_with_furniture(d: SimDevice) -> void:
+	var piece := session.world.get_furniture(d.furniture_id) if d != null else null
+	if piece == null:
+		session.hud.show_toast(TranslationServer.translate("%s forma parte de la habitación: no se mueve.") % d.display_name(), false)
+		return
+	start_furniture_move(piece.id)
+	session.hud.show_toast(TranslationServer.translate("%s va con %s: se mueven juntos.") % [d.display_name(), piece.display_name()])
+
+
+## Starts moving a piece of furniture with everything that goes with it (chair, PC, strip,
+## router...). Cables stay plugged: they are routed again at the new spot, or the spot is refused.
+func start_furniture_move(furniture_id: StringName) -> void:
+	var piece := session.world.get_furniture(furniture_id)
+	if piece == null:
+		return
+	_cancel_placement()
+	var note := cable_tool.interrupt(TranslationServer.translate("mover un mueble"))
+	if note != "":
+		session.hud.show_toast(note)
+	_ghost_furniture = furniture_id
+	_ghost_yaw = piece.yaw_degrees
+	_ghost_pos = piece.position
+	_ghost = _furniture_ghost(piece)
+	for mesh: MeshInstance3D in ModelUtil.find_meshes_with_prefix(_ghost, ""):
+		mesh.transparency = 0.45
+	session.add_child(_ghost)
+	# The real piece, its parts and what it carries disappear while the ghost moves; the cables
+	# are drawn again along their new routes once it is put down.
+	var hide: Array[Node3D] = session.room.piece_nodes(furniture_id)
+	for d: SimDevice in session.world.carried_by(furniture_id):
+		var view := session.device_views.get(d.id) as Node3D
+		if view != null:
+			hide.append(view)
+	hide.append(session.cables)
+	for node: Node3D in hide:
+		if node.visible:
+			node.visible = false
+			_hidden_views.append(node)
+	mode = Mode.PLACEMENT
+	session.hud.set_hint(TranslationServer.translate(HINT_PLACEMENT))
+	_update_ghost()
+	_move_ghost(session.get_viewport().get_mouse_position())
+
+
+## See-through copy of a piece with its parts and what it carries, around the piece origin.
+func _furniture_ghost(piece: SimFurniture) -> Node3D:
+	var root := Node3D.new()
+	root.name = "FurnitureGhost"
+	root.add_child(ModelUtil.instance_model(piece.definition.model_path))
+	for spec: Dictionary in piece.definition.parts:
+		var wrapper := Node3D.new()
+		wrapper.transform = Transform3D(Basis(Vector3.UP, deg_to_rad(float(spec["yaw"]))), spec["offset"] as Vector3)
+		wrapper.add_child(ModelUtil.instance_model(String(spec["model"])))
+		root.add_child(wrapper)
+	var inverse := Transform3D(Basis(Vector3.UP, deg_to_rad(piece.yaw_degrees)), piece.position).affine_inverse()
+	for d: SimDevice in session.world.carried_by(piece.id):
+		if d.definition.model_path == "":
+			continue
+		var wrapper := Node3D.new()
+		wrapper.transform = inverse * Transform3D(Basis(Vector3.UP, deg_to_rad(d.yaw_degrees)), d.position)
+		wrapper.add_child(ModelUtil.instance_model(d.definition.model_path))
+		root.add_child(wrapper)
+	return root
 
 
 ## Starts moving a placed device (with whatever is mounted in it). Cables must be unplugged.
@@ -237,6 +352,11 @@ func _begin(kind: StringName, target_id: int) -> void:
 			mode = Mode.OVERVIEW
 			session.hud.show_toast(TranslationServer.translate("No puedo llegar a la silla del escritorio: algo bloquea el acceso por los lados y por detrás."), false)
 			return
+	elif kind == &"device":
+		for spot: Vector3 in session.device_stand_spots(target_id):
+			if session.character.path_length_to(spot) < INF:
+				destination = spot
+				break
 	if not session.character.move_to(destination):
 		mode = Mode.OVERVIEW
 
@@ -296,7 +416,7 @@ func _sit_and_use_computer() -> void:
 	var note := cable_tool.interrupt(TranslationServer.translate("ponerte con el ordenador"))
 	if note != "":
 		session.hud.show_toast(note)
-	await session.character.sit_down(session.room.chair, deg_to_rad(RoomView.CHAIR_REST_YAW))
+	await session.character.sit_down(session.room.chair, session.room.chair_rest_yaw())
 	_focus(session.screen_anchor(), Mode.SCREEN)
 
 
@@ -333,7 +453,7 @@ func leave() -> void:
 	var character := session.character
 	if character.seated:
 		# Stands up while the camera flies back (both always finish: they have time limits).
-		character.stand_up(session.room.chair, session.chair_spots(), deg_to_rad(RoomView.CHAIR_REST_YAW))
+		character.stand_up(session.room.chair, session.chair_spots(), session.room.chair_rest_yaw())
 	await session.director.transition_finished
 	var waited := 0.0
 	while (character.busy or character.seated) and waited < PlayerCharacter.TRANSITION_TIMEOUT:
@@ -655,11 +775,27 @@ func _add_service_zones(def: HardwareDefinition) -> void:
 
 
 func _move_ghost(screen_pos: Vector2) -> void:
+	if _ghost_top_device >= 0:
+		_move_top_ghost(screen_pos)
+		return
 	var hit := _ray(screen_pos, Layers.FLOOR)
 	if hit.is_empty():
 		return
 	var p: Vector3 = hit["position"]
 	_ghost_pos = Vector3(snappedf(p.x, SNAP), 0.0, snappedf(p.z, SNAP))
+	_update_ghost()
+
+
+## A small device follows the pointer over furniture tops (finer steps: tops are small).
+func _move_top_ghost(screen_pos: Vector2) -> void:
+	var hit := _ray(screen_pos, Layers.FLOOR | Layers.FURNITURE)
+	if hit.is_empty():
+		return
+	var p: Vector3 = hit["position"]
+	var world := session.world
+	_ghost_top_piece = world.furniture_top_at(p)
+	var height := world.get_furniture(_ghost_top_piece).definition.top_height if _ghost_top_piece != &"" else 0.0
+	_ghost_pos = Vector3(snappedf(p.x, 0.02), height, snappedf(p.z, 0.02))
 	_update_ghost()
 
 
@@ -692,6 +828,19 @@ func _update_ghost() -> void:
 
 ## Simulation rules plus one presentation rule: never drop an object on the character.
 func _placement_problem() -> String:
+	if _ghost_top_device >= 0:
+		var top_key := "top|%s|%.3f|%.3f|%.0f" % [_ghost_top_piece, _ghost_pos.x, _ghost_pos.z, _ghost_yaw]
+		if top_key != _problem_key:
+			_problem_key = top_key
+			_problem_cache = session.world.top_problem(_ghost_top_device, _ghost_top_piece, _ghost_pos, _ghost_yaw)
+		return _problem_cache
+	if _ghost_furniture != &"":
+		var c := session.character.global_position
+		var key := "%s|%.3f|%.3f|%.0f|%.2f|%.2f" % [_ghost_furniture, _ghost_pos.x, _ghost_pos.z, _ghost_yaw, c.x, c.z]
+		if key != _problem_key:
+			_problem_key = key
+			_problem_cache = _furniture_problem()
+		return _problem_cache
 	var problem := session.world.placement_problem(_ghost_device, _ghost_pos, _ghost_yaw)
 	if problem != "":
 		return problem
@@ -703,10 +852,40 @@ func _placement_problem() -> String:
 	return ""
 
 
+func _furniture_problem() -> String:
+	var world := session.world
+	var problem := world.furniture_problem(_ghost_furniture, _ghost_pos, _ghost_yaw)
+	if problem != "":
+		return problem
+	var piece := world.get_furniture(_ghost_furniture)
+	var taken: Array[Rect2] = piece.rects(piece.definition.blocks, _ghost_pos, _ghost_yaw)
+	for d: SimDevice in world.carried_by(_ghost_furniture):
+		if d.definition.placement == &"floor" and d.position.y < 0.01:
+			taken.append(SimWorld.footprint_rect(d.definition, piece.carry(d.position, _ghost_pos, _ghost_yaw),
+					d.yaw_degrees + _ghost_yaw - piece.yaw_degrees))
+	var c := session.character.global_position
+	for rect: Rect2 in taken:
+		if rect.grow(0.25).has_point(Vector2(c.x, c.z)):
+			return TranslationServer.translate("Tu personaje está en medio: apártalo primero.")
+	return ""
+
+
 func _confirm_placement() -> void:
 	var problem := _placement_problem()
 	if problem != "":
 		session.hud.show_toast(problem, false)
+		return
+	if _ghost_top_device >= 0:
+		var put := session.world.place_on_furniture(_ghost_top_device, _ghost_top_piece, _ghost_pos, _ghost_yaw)
+		session.hud.show_toast(put.message, put.ok)
+		if put.ok:
+			_cancel_placement()
+		return
+	if _ghost_furniture != &"":
+		var moved := session.world.move_furniture(_ghost_furniture, _ghost_pos, _ghost_yaw)
+		session.hud.show_toast(moved.message, moved.ok)
+		if moved.ok:
+			_cancel_placement()
 		return
 	var r := session.world.place_device(_ghost_device, _ghost_pos, _ghost_yaw)
 	session.hud.show_toast(r.message, r.ok)
@@ -724,6 +903,10 @@ func _cancel_placement() -> void:
 			view.visible = true
 	_hidden_views.clear()
 	_ghost_device = -1
+	_ghost_furniture = &""
+	_ghost_top_device = -1
+	_ghost_top_piece = &""
+	_problem_key = ""
 	if mode == Mode.PLACEMENT:
 		mode = Mode.OVERVIEW
 		session.hud.set_hint(TranslationServer.translate(HINT_OVERVIEW))

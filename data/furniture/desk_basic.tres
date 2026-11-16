@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="FurnitureDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/world/furniture_definition.gd" id="1_furn"]
+
+[resource]
+script = ExtResource("1_furn")
+id = &"desk_basic"
+name_text = "el escritorio"
+blocks = Array[Rect2]([Rect2(-0.6, -0.3, 1.2, 0.6), Rect2(-0.44, 0.25, 0.58, 0.6)])
+cable_parts = Array[Rect2]([Rect2(-0.5725, -0.2725, 0.045, 0.045), Rect2(-0.5725, 0.2275, 0.045, 0.045), Rect2(0.5275, -0.2725, 0.045, 0.045), Rect2(0.5275, 0.2275, 0.045, 0.045), Rect2(0.15, -0.27, 0.4, 0.5), Rect2(-0.48, 0.22, 0.66, 0.66)])
+area = Rect2(-0.6, -0.3, 1.2, 1.15)
+top = Rect2(-0.6, -0.3, 1.2, 0.6)
+top_height = 0.75
+top_reserved = Array[Rect2]([Rect2(-0.38, -0.3, 0.46, 0.27), Rect2(-0.44, 0.06, 0.58, 0.18)])
+model_path = "res://assets/models/furniture/desk_basic.glb"
+parts = Array[Dictionary]([{
+"model": "res://assets/models/furniture/chair_office.glb",
+"offset": Vector3(-0.15, 0, 0.55),
+"role": "chair",
+"yaw": 180.0
+}, {
+"model": "res://assets/models/compute/monitor_old.glb",
+"offset": Vector3(-0.15, 0.75, -0.13),
+"role": "monitor",
+"yaw": 0.0
+}, {
+"model": "res://assets/models/compute/keyboard_mouse.glb",
+"offset": Vector3(-0.15, 0.75, 0.15),
+"role": "keyboard",
+"yaw": 0.0
+}])

@@ -4,10 +4,7 @@ extends Node3D
 ## builds the presentation around it — room, character, camera, device/package/cable views,
 ## HUD and the computer screen. Views re-sync whenever the simulation emits an event.
 
-const MONITOR_MODEL := "res://assets/models/compute/monitor_old.glb"
-const KEYBOARD_MODEL := "res://assets/models/compute/keyboard_mouse.glb"
-const MONITOR_POSITION := Vector3(0.40, 0.75, -1.30)
-const KEYBOARD_POSITION := Vector3(0.40, 0.75, -1.02)
+const PC_FURNITURE := &"desk" ## The monitor and the keyboard are parts of this piece.
 const CHARACTER_START := Vector3(0.35, 0.0, 0.55)
 const HUD_REFRESH_SECONDS := 0.25
 const CLICK_MARKER_SECONDS := 0.55
@@ -28,7 +25,7 @@ var cables: CableRenderer
 var click_fx: ClickFeedback ## Rings under the cursor on every click; red when it did nothing.
 var device_views: Dictionary = {} ## device id -> DeviceView
 var package_stack: PackageView ## All waiting boxes, stacked in the delivery zone.
-var monitor: Node3D
+var monitor: Node3D ## Part of the desk (RoomView): clicking it opens the computer.
 var pc_id: int = -1
 
 var _views_dirty: bool = true
@@ -55,7 +52,7 @@ func _ready() -> void:
 	room = RoomView.new()
 	room.name = "Room"
 	add_child(room)
-	room.build()
+	room.build(world)
 	_build_pc_extras()
 	_build_delivery_zone()
 	package_stack = PackageView.new()
@@ -195,6 +192,8 @@ func _process(delta: float) -> void:
 func _on_world_event(type: StringName, data: Dictionary) -> void:
 	_views_dirty = true
 	match type:
+		&"furniture_moved", &"state_loaded":
+			room.sync_furniture(world)
 		&"package_delivered":
 			hud.show_toast(TranslationServer.translate("¡Ha llegado tu pedido! Las cajas están en la zona de entregas, junto a la puerta (×%d).") % world.packages.size())
 			# If the character stands where the boxes appear, step it out once the floor is re-baked.
@@ -287,7 +286,7 @@ func port_global_transform(port_ref: String) -> Dictionary:
 ## in the chair's resting frame. The interaction walks to the nearest reachable one.
 func chair_spots() -> Array[Vector3]:
 	var c := room.chair.global_position
-	var basis := Basis(Vector3.UP, deg_to_rad(RoomView.CHAIR_REST_YAW))
+	var basis := Basis(Vector3.UP, room.chair_rest_yaw())
 	var spots: Array[Vector3] = []
 	for local: Vector3 in [Vector3(0.5, 0.0, -0.07), Vector3(-0.5, 0.0, -0.07), Vector3(0.0, 0.0, -0.6)]:
 		var p := c + basis * local
@@ -312,10 +311,32 @@ func stand_point(kind: StringName, target_id: int) -> Vector3:
 	return Vector3(pos.x, 0.0, pos.z) + toward_room * 0.65
 
 
+## Where the character can stand to use a device standing in the room (strip, router): the usual
+## spot (towards the middle of the room) first, then round the device starting on the side its
+## ports face. After rearranging (§8.2), a device can be anywhere: the interaction walks to the first
+## one that can be reached.
+func device_stand_spots(device_id: int) -> Array[Vector3]:
+	var view := device_views[device_id] as DeviceView
+	var pos := view.global_position
+	var facing := Vector3.ZERO
+	for area: Area3D in view.port_areas.values():
+		facing += area.global_basis.z
+	facing.y = 0.0
+	if facing.length() < 0.01:
+		facing = Vector3(-pos.x, 0.0, -pos.z)
+	var base := atan2(facing.x, facing.z)
+	var spots: Array[Vector3] = [stand_point(&"device", device_id)]
+	for k: int in [0, 1, -1, 2, -2, 3, -3, 4]:
+		var a := base + k * PI / 4.0
+		for r: float in [0.6, 0.8]:
+			spots.append(clamp_to_room(Vector3(pos.x + sin(a) * r, 0.0, pos.z + cos(a) * r), STAND_ROOM_MARGIN))
+	return spots
+
+
 func target_center(kind: StringName, target_id: int) -> Vector3:
 	match kind:
 		&"computer":
-			return MONITOR_POSITION
+			return monitor.global_position
 		&"package":
 			return package_stack.global_position + Vector3(0.0, 0.3, 0.0)
 	return (device_views[target_id] as DeviceView).global_bounds_center()
@@ -464,19 +485,11 @@ func _build_environment() -> void:
 
 
 func _build_pc_extras() -> void:
-	# The PC device is the tower; monitor and keyboard belong to it and open its desktop.
-	monitor = Node3D.new()
-	monitor.name = "Monitor"
-	monitor.position = MONITOR_POSITION
-	monitor.add_child(ModelUtil.instance_model(MONITOR_MODEL))
-	room.objects.add_child(monitor)
-	ModelUtil.add_box_body(monitor, ModelUtil.local_aabb(monitor.get_child(0) as Node3D), Layers.DEVICES).set_meta("computer_id", pc_id)
-	var keyboard := Node3D.new()
-	keyboard.name = "Keyboard"
-	keyboard.position = KEYBOARD_POSITION
-	keyboard.add_child(ModelUtil.instance_model(KEYBOARD_MODEL))
-	room.objects.add_child(keyboard)
-	ModelUtil.add_box_body(keyboard, ModelUtil.local_aabb(keyboard.get_child(0) as Node3D), Layers.DEVICES).set_meta("computer_id", pc_id)
+	# The PC device is the tower; monitor and keyboard stand on the desk (parts of it, so they
+	# move with it), belong to the PC and open its desktop.
+	monitor = room.part(PC_FURNITURE, "monitor")
+	for node: Node3D in [monitor, room.part(PC_FURNITURE, "keyboard")]:
+		ModelUtil.add_box_body(node, ModelUtil.local_aabb(node.get_child(0) as Node3D), Layers.DEVICES).set_meta("computer_id", pc_id)
 
 
 ## Floor mark of the reserved delivery zone (always visible, so the player knows it is kept free).

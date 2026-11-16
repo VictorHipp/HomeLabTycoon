@@ -149,7 +149,7 @@ func _plan_drops(world: SimWorld, port_transform: Callable) -> void:
 				tops.append([PortRef.device_id(ends[end_name]), "%d:%s" % [cable_id, end_name], socket_xf.origin, exit])
 			# A long run over a piece of furniture before going down (the router on its cabinet).
 			var long_run := absf(out.y) < 0.5 and Vector3(exit.x - p1.x, 0.0, exit.z - p1.z).dot(flat_out) > LONG_RUN_M
-			(groups[key] as Array).append([_lateral(p1, exit, way), "%d:%s" % [cable_id, end_name], way, flat_out, long_run])
+			(groups[key] as Array).append([_lateral(p1, exit, way), "%d:%s" % [cable_id, end_name], way, flat_out, long_run, p1, exit])
 	# Plugged from above (power strip): a cable whose run passes over other plugged sockets on its
 	# way to the edge goes one lane higher per socket, over the cables rising from them.
 	for a: Array in tops:
@@ -191,6 +191,7 @@ func _plan_drops(world: SimWorld, port_transform: Callable) -> void:
 			if not ways.has(way_key):
 				ways[way_key] = []
 			(ways[way_key] as Array).append(entry)
+		var planned := {} # slot key -> offset
 		for way_key: String in ways:
 			var same: Array = ways[way_key]
 			var way: Vector3 = same[0][2]
@@ -204,7 +205,39 @@ func _plan_drops(world: SimWorld, port_transform: Callable) -> void:
 				side = -side # straight out: the lanes go towards the sockets' side
 			same.sort_custom(func(p: Array, q: Array) -> bool: return absf(float(p[0])) < absf(float(q[0])))
 			for i: int in same.size():
-				_drop_offset[same[i][1]] = base + side * i * LANE_GAP
+				planned[same[i][1]] = base + side * i * LANE_GAP
+		if ways.size() > 1 and _crossing_risk(group, planned):
+			# Cables leaving one spot in different directions, with a low socket on the far side
+			# of a higher cable's way down: the one from the lowest socket goes down nearest the
+			# face and each higher one a lane and a half further out (beyond the half lane a
+			# lower one may already go out), so a cable only ever passes over
+			# (never through) one going down.
+			group.sort_custom(func(p: Array, q: Array) -> bool: return (p[5] as Vector3).y < (q[5] as Vector3).y)
+			for i: int in group.size():
+				planned[group[i][1]] = (group[i][2] as Vector3) * LANE_GAP * 0.5 + (group[i][3] as Vector3) * i * LANE_GAP * 1.5
+		for slot: String in planned:
+			_drop_offset[slot] = planned[slot]
+
+
+## Would a cable run (at its socket height, from just out of the socket to its way down) pass
+## through the way down of a cable plugged higher up? Checked on the floor plan: closer than 75 %
+## of both radii (the same margin the walkthrough checks between drawn cables).
+static func _crossing_risk(group: Array, offsets: Dictionary) -> bool:
+	for a: Array in group:
+		for b: Array in group:
+			var p1_a: Vector3 = a[5]
+			var p1_b: Vector3 = b[5]
+			if a == b or p1_a.y >= p1_b.y:
+				continue
+			var from := Vector2(p1_a.x, p1_a.z)
+			var drop_a: Vector3 = (a[6] as Vector3) + (offsets[a[1]] as Vector3)
+			var to := Vector2(drop_a.x, drop_a.z)
+			var drop_b: Vector3 = (b[6] as Vector3) + (offsets[b[1]] as Vector3)
+			var column := Vector2(drop_b.x, drop_b.z)
+			var t := clampf((column - from).dot(to - from) / maxf((to - from).length_squared(), 0.000001), 0.0, 1.0)
+			if column.distance_to(from + (to - from) * t) < (RADIUS_DATA + RADIUS_POWER) * 0.75:
+				return true
+	return false
 
 
 ## Signed distance of a socket from the way down, across the cable's way on the floor.

@@ -6,8 +6,8 @@ extends RefCounted
 
 const FORMAT := "homelab-tycoon-save"
 ## 1: first format. 2 (2026-11-16): economy (ledger, passive income), device "used", XP already
-## granted per mission requirement.
-const VERSION := 2
+## granted per mission requirement. 3 (2026-11-16): furniture layout and what each piece carries.
+const VERSION := 3
 
 
 ## Builds the document. `session` is owned by the presentation (character, camera...).
@@ -37,4 +37,8 @@ static func parse(text: String) -> Dictionary:
 		# defaults: no ledger lines, "used" for what is installed, requirement XP already given
 		# when the mission was completed).
 		document["version"] = 2
+	if int(document["version"]) < 3:
+		# v2 -> v3: no furniture key = the starting layout (BedroomScenario.restore attaches the
+		# house devices to their furniture).
+		document["version"] = 3
 	return {"ok": true, "message": "", "document": document}

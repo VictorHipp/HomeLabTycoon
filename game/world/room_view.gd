@@ -2,33 +2,31 @@ class_name RoomView
 extends Node3D
 ## The bedroom: shell, furniture, colliders, navigation mesh and wall cutaway
 ## (docs/CAMERA_SYSTEM.md §3.3–§4). Devices and packages are added under `objects`
-## so the navigation bake sees them as obstacles.
+## so the navigation bake sees them as obstacles. The furniture comes from the simulation
+## (SimWorld.furniture) and follows it when the player moves a piece (sync_furniture).
 
 const ROOM_MODEL := "res://assets/models/rooms/room_bedroom.glb"
 const ROOM_SIZE := Vector2(3.5, 3.0)
 const WALL_HEIGHT := 2.6
 const WALL_THICKNESS := 0.1
 const SKIRTING_HEIGHT := 0.08 ## Skirting boards of the room model (build_prototype_models.py).
-## [model, position, yaw degrees, blocks walking]
-const FURNITURE := [
-	["res://assets/models/furniture/bed_single.glb", Vector3(-1.24, 0.0, -0.465), 0.0, true],
-	["res://assets/models/furniture/desk_basic.glb", Vector3(0.55, 0.0, -1.17), 0.0, true],
-	["res://assets/models/furniture/chair_office.glb", Vector3(0.40, 0.0, -0.62), 180.0, true],
-	["res://assets/models/furniture/cabinet_small.glb", Vector3(1.45, 0.0, -1.28), 0.0, true],
-	["res://assets/models/furniture/rug_basic.glb", Vector3(0.25, 0.0, 0.35), 0.0, false],
-]
 const CUT_THRESHOLD := 0.25
-const CHAIR_MODEL := "res://assets/models/furniture/chair_office.glb"
-const CHAIR_REST_YAW := 180.0 ## The chair faces the desk.
+## Roles of furniture parts that get colliders like the furniture itself (the monitor and the
+## keyboard are the PC's: GameSession makes them open the computer).
+const SOLID_PARTS: PackedStringArray = ["chair"]
 
 var nav_region: NavigationRegion3D
 var chair: Node3D ## The swivel chair at the desk (turns when the character sits down).
 var objects: Node3D ## Parent for device and package views (inside the navigation region).
+## furniture id -> {"root": Node3D (main model), "parts": {role -> Node3D wrapper}}
+var pieces: Dictionary = {}
+var _chair_piece: StringName = &""
+var _chair_part_yaw: float = 0.0
 var _walls: Array[Dictionary] = [] ## {"full": Node3D, "cut": Node3D, "normal": Vector3}
 var _bake_pending: bool = false
 
 
-func build() -> void:
+func build(world: SimWorld) -> void:
 	nav_region = NavigationRegion3D.new()
 	nav_region.name = "Navigation"
 	var mesh := NavigationMesh.new()
@@ -75,19 +73,92 @@ func build() -> void:
 		if box.size.z > 0.0:
 			ModelUtil.add_box_body(nav_region, box, Layers.WALLS).name = "Skirting"
 
-	for spec: Array in FURNITURE:
-		var piece := ModelUtil.instance_model(spec[0])
-		piece.position = spec[1]
-		piece.rotation_degrees.y = spec[2]
-		nav_region.add_child(piece)
-		if spec[0] == CHAIR_MODEL:
-			chair = piece
-		if spec[3]:
-			ModelUtil.add_part_bodies(piece, Layers.FURNITURE) # solid parts (character, cables, clicks)
-			ModelUtil.add_box_body(piece, ModelUtil.local_aabb(piece), Layers.NAV_BLOCK) # navigation only
+	var ids: Array = world.furniture.keys()
+	ids.sort()
+	for furniture_id: StringName in ids:
+		_build_piece(world.furniture[furniture_id] as SimFurniture)
+	sync_furniture(world)
 
 	_walls = find_walls(room)
 	request_bake()
+
+
+## Puts every piece of furniture (and its parts) where the simulation says. The chair goes back
+## to facing its desk. Re-bakes the navigation when something moved.
+func sync_furniture(world: SimWorld) -> void:
+	var moved := false
+	for furniture_id: StringName in pieces:
+		var piece := world.get_furniture(furniture_id)
+		var nodes: Dictionary = pieces[furniture_id]
+		var root := nodes["root"] as Node3D
+		var xf := Transform3D(Basis(Vector3.UP, deg_to_rad(piece.yaw_degrees)), piece.position)
+		if not root.transform.is_equal_approx(xf):
+			moved = true
+		root.transform = xf
+		for part: Dictionary in piece.definition.parts:
+			var node := (nodes["parts"] as Dictionary)[String(part["role"])] as Node3D
+			node.transform = xf * Transform3D(Basis(Vector3.UP, deg_to_rad(float(part["yaw"]))), part["offset"] as Vector3)
+	if moved:
+		request_bake()
+
+
+## Yaw (radians) at which the desk chair faces its desk.
+func chair_rest_yaw() -> float:
+	var root := (pieces[_chair_piece] as Dictionary)["root"] as Node3D if pieces.has(_chair_piece) else null
+	return (root.rotation.y if root != null else 0.0) + deg_to_rad(_chair_part_yaw)
+
+
+## The main model and parts of a piece (to hide them while the player moves it).
+func piece_nodes(furniture_id: StringName) -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	if not pieces.has(furniture_id):
+		return result
+	var nodes: Dictionary = pieces[furniture_id]
+	result.append(nodes["root"] as Node3D)
+	for node: Node3D in (nodes["parts"] as Dictionary).values():
+		result.append(node)
+	return result
+
+
+## A part of a piece of furniture (e.g. the desk's "monitor"), or null.
+func part(furniture_id: StringName, role: String) -> Node3D:
+	if not pieces.has(furniture_id):
+		return null
+	return ((pieces[furniture_id] as Dictionary)["parts"] as Dictionary).get(role) as Node3D
+
+
+func _build_piece(piece: SimFurniture) -> void:
+	var def := piece.definition
+	var solid := not def.blocks.is_empty()
+	var root := ModelUtil.instance_model(def.model_path)
+	root.name = "Furniture_%s" % piece.id
+	nav_region.add_child(root)
+	if solid:
+		_make_solid(root, piece.id)
+	var parts := {}
+	for spec: Dictionary in def.parts:
+		var role := String(spec["role"])
+		# A wrapper per part: the model keeps its own import transform under it.
+		var wrapper := Node3D.new()
+		wrapper.name = "%s_%s" % [piece.id, role]
+		var model := ModelUtil.instance_model(String(spec["model"]))
+		wrapper.add_child(model)
+		nav_region.add_child(wrapper)
+		if role in SOLID_PARTS:
+			_make_solid(model, piece.id)
+		if role == "chair":
+			chair = wrapper
+			_chair_piece = piece.id
+			_chair_part_yaw = float(spec["yaw"])
+		parts[role] = wrapper
+	pieces[piece.id] = {"root": root, "parts": parts}
+
+
+## Solid parts (character, cables, clicks) and the whole footprint for the navigation bake.
+## Their colliders say which piece they belong to (right click moves it).
+func _make_solid(model: Node3D, furniture_id: StringName) -> void:
+	ModelUtil.add_part_bodies(model, Layers.FURNITURE).set_meta("furniture_id", furniture_id)
+	ModelUtil.add_box_body(model, ModelUtil.local_aabb(model), Layers.NAV_BLOCK).set_meta("furniture_id", furniture_id)
 
 
 ## Show the low version of the walls between the camera and the room (decision 15).

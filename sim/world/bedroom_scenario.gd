@@ -18,6 +18,17 @@ const DELIVERY_ZONE := Rect2(-0.95, 0.95, 0.60, 0.50)
 ## Floor the door needs (left wall, z 0.62..1.42, 0.80 m wide): no object and no cable there.
 const DOOR_ZONE := Rect2(-1.75, 0.57, 0.80, 0.90)
 const SKIRTING_M := 0.015 ## Skirting boards of the room model (build_prototype_models.py).
+## Starting layout: [instance id, definition, origin, yaw degrees]. The player can move every
+## piece (SimWorld.move_furniture); the desk takes the chair, the PC and the strip with it and
+## the cabinet takes the router standing on it.
+const FURNITURE := [
+	[&"bed", "res://data/furniture/bed_single.tres", Vector3(-1.24, 0.0, -0.465), 0.0],
+	[&"desk", "res://data/furniture/desk_basic.tres", Vector3(0.55, 0.0, -1.17), 0.0],
+	[&"cabinet", "res://data/furniture/cabinet_small.tres", Vector3(1.45, 0.0, -1.28), 0.0],
+	[&"rug", "res://data/furniture/rug_basic.tres", Vector3(0.25, 0.0, 0.35), 0.0],
+]
+## What goes with which piece at the start (catalog id -> furniture instance id).
+const CARRIED := {&"pc_old": &"desk", &"power_strip_4": &"desk", &"router_home": &"cabinet"}
 
 
 ## A new game.
@@ -33,6 +44,7 @@ static func create(catalog: Catalog = null) -> SimWorld:
 	router.yaw_degrees = ROUTER_YAW
 	var strip := world.create_device(&"power_strip_4", &"fixed")
 	strip.position = STRIP_POSITION
+	_attach_house_devices(world)
 
 	# Cables follow the floor (under the desk, behind the drawers): the router needs 5 m ones.
 	_cable(world, &"cable_cat6_5m", PortRef.make(pc.id, &"lan", 0), PortRef.make(router.id, &"lan", 0))
@@ -52,33 +64,30 @@ static func create(catalog: Catalog = null) -> SimWorld:
 static func restore(state: Dictionary, catalog: Catalog = null) -> SimWorld:
 	var world := new_room(catalog)
 	world.load_state(state)
+	if not state.has("furniture"):
+		_attach_house_devices(world) # saves before version 3: the starting layout
 	return world
+
+
+## The house devices go with the furniture they stand on or belong to.
+static func _attach_house_devices(world: SimWorld) -> void:
+	for d: SimDevice in world.devices.values():
+		if d.location == &"fixed" and CARRIED.has(d.definition.id):
+			d.furniture_id = CARRIED[d.definition.id]
 
 
 ## The room alone: floor area and furniture (no devices).
 static func new_room(catalog: Catalog = null) -> SimWorld:
 	var world := SimWorld.new(catalog)
 	world.room_bounds = Rect2(-1.75, -1.5, 3.5, 3.0)
-	world.obstacles.assign([
-		Rect2(-1.73, -1.485, 0.98, 2.04), # bed
-		Rect2(-0.05, -1.47, 1.20, 0.60), # desk
-		Rect2(1.18, -1.48, 0.54, 0.40), # cabinet
-		Rect2(0.11, -0.92, 0.58, 0.60), # chair
-	])
+	# Furniture footprints and what stands on the floor for a cable (bed frame, desk legs and
+	# drawers, chair base, cabinet) come from data/furniture/ (measured on the models,
+	# tests/integration/test_furniture.gd).
+	for spec: Array in FURNITURE:
+		world.add_furniture(spec[0], load(spec[1]) as FurnitureDefinition, spec[2], spec[3])
 	world.delivery_zone = DELIVERY_ZONE
 	world.door_zones.assign([DOOR_ZONE])
 	world.wall_trim_m = SKIRTING_M
-	# What stands on the floor for a cable (measured on the models, tests/integration/test_room_geometry.gd):
-	# bed frame, the four desk legs, the desk drawers, the cabinet and the chair base.
-	world.cable_obstacles.assign([
-		Rect2(-1.73, -1.485, 0.98, 2.04), # bed
-		Rect2(-0.0225, -1.4425, 0.045, 0.045), Rect2(-0.0225, -0.9425, 0.045, 0.045), # desk legs
-		Rect2(1.0775, -1.4425, 0.045, 0.045), Rect2(1.0775, -0.9425, 0.045, 0.045),
-		Rect2(0.70, -1.44, 0.40, 0.50), # desk drawers
-		Rect2(1.18, -1.48, 0.54, 0.40), # cabinet (its top overhangs the body)
-		# chair base: its five legs reach 0.32 m from the centre (0.40, -0.62) whichever way it turns
-		Rect2(0.07, -0.95, 0.66, 0.66),
-	])
 	return world
 
 

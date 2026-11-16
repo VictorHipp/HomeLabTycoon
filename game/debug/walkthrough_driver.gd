@@ -24,7 +24,7 @@ extends Node
 ## Every scenario must end with the mission completed.
 
 const STEP_TIMEOUT := 25.0
-const SCENARIOS: Array[String] = ["basic", "wall", "far", "blocking", "manual"]
+const SCENARIOS: Array[String] = ["basic", "wall", "far", "blocking", "manual", "furniture"]
 const MANUAL_DIR := "res://assets/manual"
 const MANUAL_SIZE := Vector2i(1280, 720)
 const MARK := Color("#3CC8D8")
@@ -36,6 +36,18 @@ const FAR_SPOT := Vector3(1.45, 0.0, 0.65)
 const BLOCK_SPOT := Vector3(-0.35, 0.0, 0.0)
 const ASIDE := Vector3(-1.35, 0.0, 0.85) ## Where the character waits while the rack is placed (by the door, outside the delivery zone).
 ## The uplink to the router follows the floor: about 3.1 m from the good spot, so the 5 m cable.
+## furniture scenario: [piece, where it ends up, yaw]. Checked against the simulation first
+## (every house cable still reaches); the desk goes against the left wall where the bed was.
+const NEW_LAYOUT := [
+	[&"rug", Vector3(-0.2, 0.0, 0.6), 90.0],
+	[&"bed", Vector3(0.72, 0.0, 1.0), 90.0],
+	[&"cabinet", Vector3(1.45, 0.0, -0.75), 0.0],
+	[&"desk", Vector3(-1.35, 0.0, -0.8), 90.0],
+]
+## The router goes from the cabinet to the free end of the moved desk (by the wall), turned so
+## its rear ports face the room; first over the monitor's place (refused).
+const ROUTER_ON_DESK := Vector3(-1.46, 0.0, -1.18)
+const ROUTER_ON_DESK_TAKEN := Vector3(-1.5, 0.0, -0.66)
 const SHOPPING: Array[StringName] = [&"rack_12u_open", &"switch_16p_1u", &"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_5m"]
 
 signal session_attached
@@ -101,6 +113,11 @@ func _run() -> void:
 
 
 func _steps() -> void:
+	if scenario == "furniture":
+		await _furniture_steps()
+		return
+	if scenario == "manual" and not await _manual_rearrange():
+		return
 	if not await _camera_and_walk():
 		return
 	if not await _menu_controls_and_manual():
@@ -145,6 +162,235 @@ func _steps() -> void:
 			await _manual_epilogue()
 
 
+## Rearranging the room (docs/INTERACTION_SYSTEM.md §8.2) with real input: right click on each
+## piece (or on a house device, which moves its furniture), R to turn it, a red ghost with the
+## reason where it does not fit; the PC, the strip and the router go with their furniture and
+## every house cable is laid again. Then the PC, the router and saving still work.
+func _furniture_steps() -> void:
+	_note("R1. Apartar al personaje de los sitios nuevos")
+	await _click_point(Vector3(0.3, 0.0, 0.05))
+	await _wait(func() -> bool: return not s.character.moving)
+	_note("R2. Alfombra: clic derecho en ella (está en el suelo), girarla y dejarla")
+	await _click_point(Vector3(0.75, 0.0, 0.65), MOUSE_BUTTON_RIGHT)
+	if not await _move_piece(&"rug", NEW_LAYOUT[0][1], NEW_LAYOUT[0][2], "alfombra"):
+		return
+	_note("R3. Cama: primero sobre el escritorio (no cabe), luego bajo la ventana")
+	await _click_point(Vector3(-1.24, 0.45, -0.465), MOUSE_BUTTON_RIGHT, _is_furniture.bind(&"bed"))
+	if not await _wait_mode(InteractionManager.Mode.PLACEMENT, 5.0):
+		_fail("el clic derecho en la cama no empezó a moverla")
+		return
+	var bed := s.world.get_furniture(&"bed")
+	var before := bed.position
+	await _place_piece_at(Vector3(0.4, 0.0, -0.4), 0.0, "cama_no_cabe")
+	if bed.position != before or not s.hud._toast.text.contains("choca con") or not _ghost_is_red():
+		_fail("la cama se dejó encima del escritorio o no explicó por qué («%s»)" % s.hud._toast.text)
+	if not await _move_piece(&"bed", NEW_LAYOUT[1][1], NEW_LAYOUT[1][2], "cama", false):
+		return
+	_note("R4. Mesilla: clic derecho en ella; el router de encima va con ella")
+	var router := _house_device(&"router_home")
+	var router_before := router.position
+	await _click_point(Vector3(1.45, 0.3, -1.08), MOUSE_BUTTON_RIGHT, _is_furniture.bind(&"cabinet"))
+	if not await _move_piece(&"cabinet", NEW_LAYOUT[2][1], NEW_LAYOUT[2][2], "mesilla"):
+		return
+	if absf(router.position.z - router_before.z - 0.53) > 0.01 or absf(router.position.y - router_before.y) > 0.001:
+		_fail("el router no fue con la mesilla: %s -> %s" % [_v(router_before), _v(router.position)])
+	_note("R5. Escritorio con el PC, la silla y la regleta: clic derecho en el monitor (va con el escritorio), girarlo 90° y llevarlo a la pared izquierda")
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_RIGHT, _is_computer)
+	if not s.hud._toast.text.contains("se mueven juntos"):
+		_fail("el monitor no dice que va con el escritorio: «%s»" % s.hud._toast.text)
+	if not await _move_piece(&"desk", NEW_LAYOUT[3][1], NEW_LAYOUT[3][2], "escritorio"):
+		return
+	_note("R5b. Router: clic derecho en él y pasarlo de la mesilla al escritorio (sitio ocupado primero)")
+	await _frames(30)
+	await _click_point(s.target_center(&"device", router.id), MOUSE_BUTTON_RIGHT, _is_device_or_rack.bind(router.id))
+	if not await _wait_mode(InteractionManager.Mode.PLACEMENT, 5.0) or s.interaction._ghost_top_device != router.id:
+		_fail("el clic derecho en el router no empezó a moverlo")
+		return
+	await _place_piece_at(ROUTER_ON_DESK_TAKEN + Vector3(0.0, 0.75, 0.0), 270.0, "router_sitio_ocupado")
+	if router.furniture_id != &"cabinet" or not s.hud._toast.text.contains("ocupado"):
+		_fail("el router se dejó sobre el monitor o no explicó por qué: «%s»" % s.hud._toast.text)
+	await _place_piece_at(ROUTER_ON_DESK + Vector3(0.0, 0.75, 0.0), 270.0, "router_en_escritorio")
+	if router.furniture_id != &"desk" or Vector2(router.position.x - ROUTER_ON_DESK.x, router.position.z - ROUTER_ON_DESK.z).length() > 0.03 \
+			or absf(router.position.y - 0.75) > 0.001:
+		_fail("el router no quedó sobre el escritorio: %s sobre «%s» («%s»)" % [_v(router.position), router.furniture_id, s.hud._toast.text])
+		return
+	await _wait_mode(InteractionManager.Mode.OVERVIEW, 3.0)
+	await _frames(60) # navigation bake
+	_check_views_follow("tras reorganizar")
+	await _check_no_overlaps("tras reorganizar")
+	await _check_cables_clear("tras reorganizar")
+	_check_cables_apart("tras reorganizar")
+	await _shot("reorganizada")
+	_note("R6. El PC en su nuevo sitio: sentarse, terminal y ping al router")
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	if not await _wait_mode(InteractionManager.Mode.SCREEN, 15.0):
+		_fail("no pude sentarme al PC en su nuevo sitio («%s»)" % s.hud._toast.text)
+		return
+	await _shot("pc_nuevo_sitio")
+	if not await _press(_find_button(s.screen, "Terminal"), "Terminal"):
+		return
+	await _frames(5)
+	await _type_line(s.screen._terminal, "ping -c 2 192.168.1.1")
+	await _frames(5)
+	if not s.screen._terminal.output.get_parsed_text().contains("64 bytes from 192.168.1.1"):
+		_fail("desde el PC movido el router no responde al ping")
+	_key(KEY_ESCAPE)
+	await _wait_mode(InteractionManager.Mode.OVERVIEW)
+	await _wait(func() -> bool: return not s.character.busy, 5.0)
+	_check_standing("tras usar el PC movido")
+	_note("R7. Vista cercana del router en la mesilla movida")
+	if not await _open(&"device", router.id):
+		return
+	await _shot("router_nuevo_sitio")
+	await _leave()
+	await _save_load_layout()
+
+
+## Right click already done: rotates the ghost with R, puts it on `target` and checks that the
+## piece (and only a valid spot) moved. `expect_mode`: wait for the placement mode first.
+func _move_piece(furniture_id: StringName, target: Vector3, yaw: float, label: String, expect_mode: bool = true) -> bool:
+	if expect_mode and not await _wait_mode(InteractionManager.Mode.PLACEMENT, 5.0):
+		_fail("el clic derecho no empezó a mover %s («%s»)" % [label, s.hud._toast.text])
+		return false
+	if s.interaction._ghost_furniture != furniture_id:
+		_fail("se está moviendo «%s», no %s" % [s.interaction._ghost_furniture, label])
+		return false
+	await _place_piece_at(target, yaw, label)
+	var piece := s.world.get_furniture(furniture_id)
+	if Vector2(piece.position.x - target.x, piece.position.z - target.z).length() > 0.03 or not is_equal_approx(piece.yaw_degrees, yaw):
+		_fail("%s no quedó en %s a %d° (está en %s a %d°): «%s»" % [label, _v(target), int(yaw), _v(piece.position), int(piece.yaw_degrees), s.hud._toast.text])
+		return false
+	await _wait_mode(InteractionManager.Mode.OVERVIEW, 3.0)
+	await _frames(20)
+	return true
+
+
+## Turns the furniture ghost with R to `yaw`, points at `target` and clicks.
+func _place_piece_at(target: Vector3, yaw: float, shot_label: String, manual_name: String = "") -> void:
+	for _i: int in 4:
+		if is_equal_approx(s.interaction._ghost_yaw, yaw):
+			break
+		_key(KEY_R)
+		await _frames(2)
+	var screen := s.camera.unproject_position(target)
+	_motion(screen)
+	await _frames(5)
+	_note("  vista previa en %s, %d°: %s" % [_v(target), int(yaw), s.hud._tool.text.replace("\n", " | ")])
+	await _shot(shot_label)
+	if manual_name != "":
+		await _manual(manual_name, [s.hud._tool.get_global_rect()], [s.camera.unproject_position(target + Vector3(0, 0.4, 0))])
+	await _click_screen(screen)
+	_note("  -> %s" % s.hud._toast.text)
+
+
+## Every piece, its parts and what it carries are drawn where the simulation says.
+func _check_views_follow(label: String) -> void:
+	for furniture_id: StringName in s.world.furniture:
+		var piece := s.world.get_furniture(furniture_id)
+		var root := s.room.piece_nodes(furniture_id)[0]
+		if not root.visible or root.global_position.distance_to(piece.position) > 0.005 \
+				or absf(angle_difference(root.rotation.y, deg_to_rad(piece.yaw_degrees))) > 0.01:
+			_fail("%s: %s se dibuja en %s y está en %s" % [label, furniture_id, _v(root.global_position), _v(piece.position)])
+		for d: SimDevice in s.world.carried_by(furniture_id):
+			var view := s.device_views.get(d.id) as Node3D
+			if view == null or not view.visible or view.global_position.distance_to(d.position) > 0.005:
+				_fail("%s: %s no se dibuja con %s" % [label, d.display_name(), furniture_id])
+	if s.monitor.global_position.distance_to(SimFurniture.place_point(Vector3(-0.15, 0.75, -0.13), s.world.get_furniture(&"desk").position, s.world.get_furniture(&"desk").yaw_degrees)) > 0.005:
+		_fail("%s: el monitor no siguió al escritorio" % label)
+	if absf(angle_difference(s.room.chair.rotation.y, s.room.chair_rest_yaw())) > 0.03:
+		_fail("%s: la silla no mira a su escritorio" % label)
+
+
+func _save_load_layout() -> void:
+	_note("R8. Guardar, mover la alfombra otra vez y cargar: vuelve la distribución guardada")
+	_key(KEY_ESCAPE) # the menu
+	await _frames(5)
+	var saved := _layout()
+	if not await _press(_find_button(s.menu, "Guardar partida"), "Guardar partida"):
+		return
+	await _press(_find_button(s.menu, "Continuar (Esc)"), "Continuar")
+	await _frames(5)
+	await _click_point(Vector3(-0.45, 0.0, 1.05), MOUSE_BUTTON_RIGHT)
+	if not await _move_piece(&"rug", Vector3(-0.2, 0.0, 0.4), 0.0, "alfombra (cambio tras guardar)"):
+		return
+	_key(KEY_ESCAPE)
+	await _frames(5)
+	var old_id := s.get_instance_id()
+	if not await _press(_find_button(s.menu, "Cargar partida"), "Cargar partida"):
+		return
+	if not await _wait(func() -> bool: return is_instance_valid(s) and s.get_instance_id() != old_id, 10.0):
+		_fail("la partida no se cargó")
+		return
+	await _frames(90)
+	if str(_layout()) != str(saved):
+		_fail("tras cargar la distribución no coincide:\n guardada %s\n cargada  %s" % [saved, _layout()])
+	_check_views_follow("tras cargar")
+	await _check_no_overlaps("tras cargar")
+	await _check_cables_clear("tras cargar")
+	await _shot("tras_cargar")
+
+
+func _layout() -> Array:
+	var result: Array = []
+	var ids: Array = s.world.furniture.keys()
+	ids.sort()
+	for furniture_id: StringName in ids:
+		var piece := s.world.get_furniture(furniture_id)
+		result.append([String(furniture_id), piece.position.snapped(Vector3.ONE * 0.001), piece.yaw_degrees])
+	for d: SimDevice in s.world.devices.values():
+		if d.furniture_id != &"":
+			result.append([d.id, d.position.snapped(Vector3.ONE * 0.001), d.yaw_degrees])
+	return result
+
+
+## manual: the captures of the "rearrange the room" chapter; the room is left as it was.
+func _manual_rearrange() -> bool:
+	_note("0b. Reorganizar (capturas del manual): mover la alfombra y devolverla; la cama no cabe en el escritorio")
+	await _click_point(Vector3(0.75, 0.0, 0.65), MOUSE_BUTTON_RIGHT)
+	if not await _wait_mode(InteractionManager.Mode.PLACEMENT, 5.0):
+		_fail("el clic derecho en la alfombra no empezó a moverla")
+		return false
+	await _place_piece_at(Vector3(-0.2, 0.0, 0.6), 90.0, "alfombra", "28_mover_mueble")
+	await _wait_mode(InteractionManager.Mode.OVERVIEW, 3.0)
+	await _frames(20)
+	await _click_point(Vector3(-1.24, 0.45, -0.465), MOUSE_BUTTON_RIGHT, _is_furniture.bind(&"bed"))
+	if not await _wait_mode(InteractionManager.Mode.PLACEMENT, 5.0):
+		return false
+	await _place_piece_at(Vector3(0.4, 0.0, -0.4), 0.0, "cama_no_cabe", "29_mueble_no_cabe")
+	_key(KEY_ESCAPE)
+	await _wait_mode(InteractionManager.Mode.OVERVIEW, 3.0)
+	# The desk ghost carries the chair, the PC and the strip (only shown, then cancelled).
+	await _click_point(Vector3(1.0, 0.76, -1.1), MOUSE_BUTTON_RIGHT, _is_furniture.bind(&"desk"))
+	if not await _wait_mode(InteractionManager.Mode.PLACEMENT, 5.0):
+		return false
+	var spot := Vector3(0.55, 0.0, -0.75)
+	_motion(s.camera.unproject_position(spot))
+	# The bed's refusal must not still be showing in this picture (toasts fade after 5 s).
+	await _wait(func() -> bool: return s.hud._toast_time <= 0.0, 8.0)
+	await _frames(5)
+	await _manual("30_escritorio_con_pc", [s.hud._tool.get_global_rect()], [s.camera.unproject_position(spot + Vector3(0, 0.8, 0))])
+	_key(KEY_ESCAPE)
+	await _wait_mode(InteractionManager.Mode.OVERVIEW, 3.0)
+	await _frames(10)
+	if s.world.get_furniture(&"desk").position != Vector3(0.55, 0.0, -1.17):
+		_fail("cancelar movió el escritorio")
+	await _click_point(Vector3(-0.2, 0.0, 1.1), MOUSE_BUTTON_RIGHT)
+	if not await _move_piece(&"rug", Vector3(0.25, 0.0, 0.35), 0.0, "alfombra (de vuelta)"):
+		return false
+	return true
+
+
+func _is_furniture(collider: Node, furniture_id: StringName) -> bool:
+	return collider.has_meta("furniture_id") and collider.get_meta("furniture_id") == furniture_id
+
+
+func _house_device(item_id: StringName) -> SimDevice:
+	for d: SimDevice in s.world.devices.values():
+		if d.definition.id == item_id:
+			return d
+	return null
+
+
 ## After the mission: the server earns passive income (seen in the HUD, paid on the hour), the
 ## account lists every movement, and the second-hand market buys the spare cable for less.
 func _economy() -> bool:
@@ -164,7 +410,7 @@ func _economy() -> bool:
 	_note("  cobrado: %d -> %d cr" % [before, s.world.credits])
 	await _shot("ingreso_pasivo")
 	await _manual("25_ingresos", [_hud_rect(s.hud._credits), _hud_rect(s.hud._income)])
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	if not await _wait_mode(InteractionManager.Mode.SCREEN):
 		return false
 	if not await _press(_find_button(s.screen, "Mi cuenta"), "Mi cuenta"):
@@ -307,7 +553,7 @@ func _camera_and_walk() -> bool:
 
 func _shop() -> bool:
 	_note("1. Sentarse al ordenador y comprar (botones reales)")
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	if not await _wait(func() -> bool: return s.character.seated, 20.0):
 		_fail("el personaje no se sentó en la silla (modo %d, mensaje «%s»)" % [s.interaction.mode, s.hud._toast.text])
 		return false
@@ -391,7 +637,7 @@ func _check_standing(label: String) -> void:
 	var closest := NavigationServer3D.map_get_closest_point(s.get_world_3d().navigation_map, c.global_position)
 	if Vector2(closest.x - c.global_position.x, closest.z - c.global_position.z).length() > 0.12:
 		_fail("%s: el personaje queda fuera del suelo transitable en %s" % [label, _v(c.global_position)])
-	if absf(angle_difference(s.room.chair.rotation.y, deg_to_rad(RoomView.CHAIR_REST_YAW))) > 0.03:
+	if absf(angle_difference(s.room.chair.rotation.y, s.room.chair_rest_yaw())) > 0.03:
 		_fail("%s: la silla no volvió a mirar al escritorio" % label)
 
 
@@ -615,7 +861,7 @@ func _cable_cancelled_by_other_work(strip: SimDevice) -> bool:
 		_fail("el primer extremo no se conectó")
 		return false
 	await _leave()
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	if not await _wait_mode(InteractionManager.Mode.SCREEN):
 		return false
 	if s.world.pending_cable() >= 0 or s.world.get_device(cord).location != &"inventory":
@@ -867,7 +1113,7 @@ func _server_ip(rack: SimDevice) -> bool:
 
 func _ping_from_pc() -> bool:
 	_note("10. Ping desde el PC: aplicación Terminal y orden tecleada")
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	if not await _wait_mode(InteractionManager.Mode.SCREEN):
 		return false
 	if not await _press(_find_button(s.screen, "Terminal"), "Terminal"):
@@ -979,7 +1225,7 @@ func _narrow_walks() -> bool:
 func _sit_stand_repeatedly(times: int) -> bool:
 	_note("11. Sentarse y levantarse %d veces seguidas" % times)
 	for i: int in times:
-		await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+		await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 		if not await _wait_mode(InteractionManager.Mode.SCREEN):
 			return false
 		if not s.character.seated:
@@ -1003,7 +1249,7 @@ func _save_and_load(rack_id: int) -> void:
 	_note("12. Guardar sentado ante el PC, cambiar la partida y cargar")
 	# Clock paused (it is saved too): no passive income can be paid between saving and checking.
 	await _press(s.hud._speed_buttons[0.0], "II (pausa)")
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	if not await _wait_mode(InteractionManager.Mode.SCREEN):
 		return
 	if not await _press(_find_button(s.screen, "Menú"), "Menú (pantalla del PC)"):
@@ -1087,7 +1333,7 @@ func _chair_blocked() -> void:
 		boxes.append(body)
 	await _rebake()
 	var before := s.character.global_position
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	await _frames(15)
 	if s.interaction.mode != InteractionManager.Mode.OVERVIEW or not s.hud._toast.text.contains("No puedo llegar a la silla"):
 		_fail("con la silla bloqueada no avisa (modo %d, «%s»)" % [s.interaction.mode, s.hud._toast.text])
@@ -1098,7 +1344,7 @@ func _chair_blocked() -> void:
 		body.queue_free()
 	await _frames(2)
 	await _rebake()
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	await _click_point(s.monitor.global_position + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	if await _wait_mode(InteractionManager.Mode.SCREEN):
 		_key(KEY_ESCAPE)
 		await _wait_mode(InteractionManager.Mode.OVERVIEW)
@@ -1656,7 +1902,8 @@ func _fail(text: String) -> void:
 
 func _finish() -> void:
 	var tracker := s.world.mission
-	var ok := _failures.is_empty() and tracker.completed
+	# The furniture scenario only rearranges the room (no mission).
+	var ok := _failures.is_empty() and (tracker.completed or scenario == "furniture")
 	_note("Misión completada: %s · estado %s" % [tracker.completed, str(tracker.status)])
 	_note("Créditos %d · XP %d · nivel %d" % [s.world.credits, s.world.xp, s.world.level()])
 	var file := FileAccess.open(out_dir.path_join("walkthrough_log.txt"), FileAccess.WRITE)

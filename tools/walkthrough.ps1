@@ -5,11 +5,11 @@
 #   powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1                 # all scenarios
 #   powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1 -Scenario far   # just one
 #
-# Scenarios: basic, wall, far, blocking (where the rack goes) and manual (takes the annotated
+# Scenarios: basic, wall, far, blocking (where the rack goes), furniture (rearranging the room) and manual (takes the annotated
 # screenshots of the in-game manual into assets\manual\; not part of 'all'). See game/debug/walkthrough_driver.gd.
 # Output: build\walkthrough\<scenario>\NN_<step>.png and walkthrough_log.txt (not versioned).
 param(
-    [ValidateSet('all', 'basic', 'wall', 'far', 'blocking', 'manual')]
+    [ValidateSet('all', 'basic', 'wall', 'far', 'blocking', 'furniture', 'manual')]
     [string]$Scenario = 'all',
     [string]$OutDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'build\walkthrough'),
     [string]$Resolution = '1600x900'
@@ -22,7 +22,7 @@ $buildRoot = Split-Path $OutDir -Parent
 New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
 if (-not (Test-Path (Join-Path $buildRoot '.gdignore'))) { New-Item -ItemType File -Path (Join-Path $buildRoot '.gdignore') | Out-Null }
 
-$names = if ($Scenario -eq 'all') { @('basic', 'wall', 'far', 'blocking') } else { @($Scenario) }
+$names = if ($Scenario -eq 'all') { @('basic', 'wall', 'far', 'blocking', 'furniture') } else { @($Scenario) }
 $failed = @()
 foreach ($name in $names) {
     $dir = Join-Path $OutDir $name

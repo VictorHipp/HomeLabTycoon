@@ -31,11 +31,15 @@ var orders: Array[Dictionary] = [] ## {"id", "eta", "groups", "total", "delivere
 var cable_ends: Dictionary = {} ## cable device id -> {"a": port_ref, "b": port_ref}
 var port_cable: Dictionary = {} ## port_ref -> cable device id
 var room_bounds: Rect2 = Rect2() ## Floor area (x, z) where things can be placed.
-var obstacles: Array[Rect2] = [] ## Furniture footprints (x, z).
+var obstacles: Array[Rect2] = [] ## Furniture footprints (x, z), rebuilt from `furniture`.
+## Pieces of furniture by instance id (StringName -> SimFurniture). The player can move them
+## (move_furniture); `obstacles` and `cable_obstacles` are rebuilt from them.
+var furniture: Dictionary = {}
 ## Floor area by the entrance reserved for deliveries: every box waits there in one stack
 ## and nothing may be placed on it (docs/INTERACTION_SYSTEM.md §7).
 var delivery_zone: Rect2 = Rect2()
 ## Furniture that stands on the floor: cables go around it (a desk on legs only counts its legs).
+## Rebuilt from `furniture`.
 var cable_obstacles: Array[Rect2] = []
 ## Floor in front of each door: kept free (nothing is placed there and no cable crosses it).
 var door_zones: Array[Rect2] = []
@@ -640,6 +644,234 @@ static func rack_unit_anchor(rack_def: HardwareDefinition, rack_pos: Vector3, ra
 	return rack_pos + local.rotated(Vector3.UP, deg_to_rad(rack_yaw))
 
 
+# ---------------------------------------------------------------- furniture --
+
+## Adds a piece of furniture to the room (scenarios). Returns it.
+func add_furniture(instance_id: StringName, def: FurnitureDefinition, pos: Vector3, yaw_degrees: float) -> SimFurniture:
+	var piece := SimFurniture.new(instance_id, def, Vector3(pos.x, 0.0, pos.z), yaw_degrees)
+	furniture[instance_id] = piece
+	_rebuild_furniture_geometry()
+	return piece
+
+
+func get_furniture(instance_id: StringName) -> SimFurniture:
+	return furniture.get(instance_id) as SimFurniture
+
+
+## A flat piece (nothing blocks on it, like a rug) under a floor point, or "".
+func flat_furniture_at(point: Vector3) -> StringName:
+	for piece: SimFurniture in furniture.values():
+		if piece.definition.blocks.is_empty() and piece.rect(piece.definition.area).has_point(Vector2(point.x, point.z)):
+			return piece.id
+	return &""
+
+
+## The piece of furniture whose top covers a floor point (x, z), or "".
+func furniture_top_at(point: Vector3) -> StringName:
+	for piece: SimFurniture in furniture.values():
+		if piece.definition.top.has_area() and piece.rect(piece.definition.top).has_point(Vector2(point.x, point.z)):
+			return piece.id
+	return &""
+
+
+## Read-only check of putting a small device (placement "desk", like the router) on top of a
+## piece of furniture at (x, z) turned `yaw`: "" if it fits, otherwise the reason.
+func top_problem(device_id: int, furniture_id: StringName, pos: Vector3, yaw_degrees: float) -> String:
+	var d := get_device(device_id)
+	if d == null or not d.is_in_world() or d.location == &"mounted":
+		return tr("Ese equipo no está en la habitación.")
+	if d.definition.placement != &"desk":
+		return tr("%s no va encima de los muebles.") % d.display_name()
+	var piece := get_furniture(furniture_id)
+	if piece == null or not piece.definition.top.has_area():
+		return tr("%s va encima de un mueble: el escritorio o la mesilla.") % d.display_name()
+	var rect := footprint_rect(d.definition, pos, yaw_degrees)
+	if not piece.rect(piece.definition.top).encloses(rect):
+		return tr("No cabe ahí: se saldría por el borde.")
+	for reserved: Rect2 in piece.rects(piece.definition.top_reserved):
+		if rect.intersects(reserved):
+			return tr("No cabe ahí: ese sitio ya está ocupado.")
+	for other: SimDevice in devices.values():
+		if other != d and other.furniture_id == furniture_id and other.position.y > 0.01 and other.is_in_world() \
+				and rect.intersects(footprint_rect(other.definition, other.position, other.yaw_degrees)):
+			return tr("No cabe ahí: choca con %s.") % other.display_name()
+	var saved := [d.position, d.yaw_degrees, d.furniture_id]
+	d.position = Vector3(pos.x, piece.definition.top_height, pos.z)
+	d.yaw_degrees = fposmod(round(yaw_degrees / 90.0) * 90.0, 360.0)
+	d.furniture_id = furniture_id
+	var problem := ""
+	for cable_id: int in cable_ends:
+		var ends: Dictionary = cable_ends[cable_id]
+		if ends["b"] == "" or not (PortRef.device_id(ends["a"]) == d.id or PortRef.device_id(ends["b"]) == d.id):
+			continue
+		var route := route_between(ends["a"], ends["b"], _cable_length(cable_id))
+		var spec := get_device(cable_id).definition.get_spec(CableSpec) as CableSpec
+		var name := get_device(cable_id).definition.model
+		if not route["ok"]:
+			problem = tr("Ahí el cable %s no tendría paso: %s") % [name, route["reason"]]
+			break
+		if route["length"] > spec.length_m:
+			problem = tr("Ahí el cable %s no llegaría: harían falta unos %s m y mide %s m.") % [name, metres_needed(route["length"]), metres(spec.length_m, 0)]
+			break
+	d.position = saved[0]
+	d.yaw_degrees = saved[1]
+	d.furniture_id = saved[2]
+	return problem
+
+
+## Puts a small device on top of a piece of furniture (it then moves with that piece).
+func place_on_furniture(device_id: int, furniture_id: StringName, pos: Vector3, yaw_degrees: float) -> CommandResult:
+	var problem := top_problem(device_id, furniture_id, pos, yaw_degrees)
+	if problem != "":
+		return CommandResult.failure(problem)
+	var d := get_device(device_id)
+	var piece := get_furniture(furniture_id)
+	d.position = Vector3(pos.x, piece.definition.top_height, pos.z)
+	d.yaw_degrees = fposmod(round(yaw_degrees / 90.0) * 90.0, 360.0)
+	d.furniture_id = furniture_id
+	_emit(&"device_placed", {"device_id": d.id})
+	_refresh()
+	return CommandResult.success(tr("Hecho: %s está ahora sobre %s.") % [d.display_name(), piece.display_name()])
+
+
+## Devices that go with a piece of furniture (on its top or belonging to it).
+func carried_by(instance_id: StringName) -> Array[SimDevice]:
+	var result: Array[SimDevice] = []
+	for d: SimDevice in devices.values():
+		if d.furniture_id == instance_id and d.is_in_world():
+			result.append(d)
+	return result
+
+
+## Read-only check of moving a piece of furniture (with what it carries) to (pos, yaw): "" if
+## it fits there, otherwise the reason (for the preview). Cables stay plugged: every cable must
+## still have a way and be long enough with the piece at the new spot.
+func furniture_problem(instance_id: StringName, pos: Vector3, yaw_degrees: float) -> String:
+	var piece := get_furniture(instance_id)
+	if piece == null:
+		return tr("Ese mueble no está en la habitación.")
+	var def := piece.definition
+	if not room_bounds.encloses(piece.rect(def.area, pos, yaw_degrees)):
+		return tr("No cabe ahí: se sale de la habitación.")
+	var carried := carried_by(instance_id)
+	var taken: Array[Rect2] = piece.rects(def.blocks, pos, yaw_degrees)
+	for d: SimDevice in carried:
+		if d.definition.placement == &"floor" and d.position.y < 0.01:
+			var rect := footprint_rect(d.definition, piece.carry(d.position, pos, yaw_degrees),
+					d.yaw_degrees + yaw_degrees - piece.yaw_degrees)
+			if not room_bounds.encloses(rect):
+				return tr("No cabe ahí: %s se saldría de la habitación.") % d.display_name()
+			taken.append(rect)
+	for rect: Rect2 in taken:
+		var problem := _furniture_spot_problem(rect, piece, carried)
+		if problem != "":
+			return problem
+	return _cable_problem_if_furniture_moved(piece, pos, yaw_degrees)
+
+
+## What `rect` (floor a moved piece would take) collides with, or "".
+func _furniture_spot_problem(rect: Rect2, piece: SimFurniture, carried: Array[SimDevice]) -> String:
+	for other: SimFurniture in furniture.values():
+		if other == piece:
+			continue
+		for block: Rect2 in other.rects(other.definition.blocks):
+			if rect.intersects(block):
+				return tr("No cabe ahí: choca con %s.") % other.display_name()
+	for other: SimDevice in _floor_devices(null):
+		if other in carried:
+			continue
+		if rect.intersects(footprint_rect(other.definition, other.position, other.yaw_degrees)):
+			return tr("No cabe ahí: choca con %s.") % other.display_name()
+	for package: Dictionary in packages.values():
+		if rect.intersects(_package_rect(package)):
+			return tr("No cabe ahí: hay un paquete en medio.")
+	if rect.intersects(delivery_zone):
+		return tr("Esa zona junto a la puerta está reservada para las entregas.")
+	for door: Rect2 in door_zones:
+		if rect.intersects(door):
+			return tr("No cabe ahí: cerrarías el paso de la puerta.")
+	for other: SimDevice in _floor_devices(null):
+		for zone: Rect2 in service_zones(other.definition, other.position, other.yaw_degrees):
+			if rect.intersects(zone):
+				return tr("No cabe ahí: taparía el espacio de trabajo de %s.") % other.display_name()
+	return ""
+
+
+## With the piece (and what it carries) at the new spot, every complete cable is routed again.
+func _cable_problem_if_furniture_moved(piece: SimFurniture, pos: Vector3, yaw_degrees: float) -> String:
+	if cable_ends.is_empty():
+		return ""
+	var saved := _set_furniture_pose(piece, pos, yaw_degrees)
+	var problem := ""
+	for cable_id: int in cable_ends:
+		var ends: Dictionary = cable_ends[cable_id]
+		if ends["b"] == "":
+			continue
+		var route := route_between(ends["a"], ends["b"], _cable_length(cable_id))
+		var spec := get_device(cable_id).definition.get_spec(CableSpec) as CableSpec
+		var name := get_device(cable_id).definition.model
+		if not route["ok"]:
+			problem = tr("Ahí cortaría el paso del cable %s: %s") % [name, route["reason"]]
+			break
+		if route["length"] > spec.length_m:
+			problem = tr("Con %s ahí, el cable %s no llegaría: harían falta unos %s m y mide %s m.") % [piece.display_name(), name, metres_needed(route["length"]), metres(spec.length_m, 0)]
+			break
+	_restore_furniture_pose(saved)
+	return problem
+
+
+func move_furniture(instance_id: StringName, pos: Vector3, yaw_degrees: float) -> CommandResult:
+	var problem := furniture_problem(instance_id, pos, yaw_degrees)
+	if problem != "":
+		return CommandResult.failure(problem)
+	var piece := get_furniture(instance_id)
+	_set_furniture_pose(piece, pos, yaw_degrees)
+	_emit(&"furniture_moved", {"furniture_id": instance_id})
+	_refresh()
+	return CommandResult.success(tr("Hecho: %s está en su nuevo sitio.") % piece.display_name())
+
+
+## Puts a piece and what it carries at (pos, yaw) and rebuilds the room geometry. Returns what
+## _restore_furniture_pose needs to undo it.
+func _set_furniture_pose(piece: SimFurniture, pos: Vector3, yaw_degrees: float) -> Array:
+	var yaw := fposmod(round(yaw_degrees / 90.0) * 90.0, 360.0)
+	var saved: Array = [piece, piece.position, piece.yaw_degrees, []]
+	for d: SimDevice in carried_by(piece.id):
+		(saved[3] as Array).append([d, d.position, d.yaw_degrees])
+		d.position = piece.carry(d.position, pos, yaw)
+		d.yaw_degrees = fposmod(d.yaw_degrees + yaw - piece.yaw_degrees, 360.0)
+	piece.position = Vector3(pos.x, 0.0, pos.z)
+	piece.yaw_degrees = yaw
+	_rebuild_furniture_geometry()
+	return saved
+
+
+func _restore_furniture_pose(saved: Array) -> void:
+	var piece := saved[0] as SimFurniture
+	piece.position = saved[1]
+	piece.yaw_degrees = saved[2]
+	for entry: Array in saved[3]:
+		var d := entry[0] as SimDevice
+		d.position = entry[1]
+		d.yaw_degrees = entry[2]
+	_rebuild_furniture_geometry()
+
+
+## `obstacles` and `cable_obstacles` from the furniture; cable routes are worked out again.
+func _rebuild_furniture_geometry() -> void:
+	obstacles.clear()
+	cable_obstacles.clear()
+	var ids: Array = furniture.keys()
+	ids.sort()
+	for instance_id: StringName in ids:
+		var piece := furniture[instance_id] as SimFurniture
+		obstacles.append_array(piece.rects(piece.definition.blocks))
+		cable_obstacles.append_array(piece.rects(piece.definition.cable_parts))
+	_router = null
+	_route_cache.clear()
+	_route_cache_version = -1
+
+
 # ------------------------------------------------------------- cable routes --
 
 ## Route of a cable plugged at both ends (cached until the world changes). See route_between.
@@ -801,7 +1033,7 @@ func _cable_end(d: SimDevice, group: PortDefinition, toward: Vector2) -> Diction
 	var over := 0.0
 	# On top of a piece of furniture (router on the cabinet): over its top to the edge, then down.
 	var steps := 0
-	while d.position.y > 0.01 and steps < 150 and _over_furniture(exit):
+	while d.position.y > 0.01 and steps < 150 and _over_top(d, exit):
 		exit += outward * 0.01
 		over += 0.01
 		steps += 1
@@ -822,6 +1054,14 @@ func _rack_post_end(rack: SimDevice, face: StringName, height: float, toward: Ve
 	best["height"] = height
 	best["face"] = face
 	return best
+
+
+## Over the top a raised device stands on (its piece of furniture), or else over any furniture.
+func _over_top(d: SimDevice, p: Vector2) -> bool:
+	var piece := get_furniture(d.furniture_id)
+	if piece != null and piece.definition.top.has_area():
+		return piece.rect(piece.definition.top).grow(CableRouter.CLEARANCE).has_point(p)
+	return _over_furniture(p)
 
 
 func _over_furniture(p: Vector2) -> bool:
@@ -1082,7 +1322,17 @@ func save_state() -> Dictionary:
 		"cables": cable_list,
 		"mission": mission.save_state() if mission != null else {},
 		"economy": economy.save_state(),
+		"furniture": _furniture_state(),
 	}
+
+
+func _furniture_state() -> Array:
+	var result: Array = []
+	var ids: Array = furniture.keys()
+	ids.sort()
+	for instance_id: StringName in ids:
+		result.append((furniture[instance_id] as SimFurniture).save_state())
+	return result
 
 
 ## Replaces the dynamic state with a save_state() dictionary (also after a JSON round trip,
@@ -1137,6 +1387,14 @@ func load_state(data: Dictionary) -> void:
 	mission = MissionTracker.from_state(saved_mission) if not saved_mission.is_empty() else null
 	economy = Economy.new(economy.rules)
 	economy.load_state(data.get("economy", {}))
+	# Where each piece of furniture stands (saves before version 3: the starting layout).
+	for saved: Dictionary in data.get("furniture", []):
+		var piece := get_furniture(StringName(saved["id"]))
+		if piece != null:
+			var p: Array = saved["position"]
+			piece.position = Vector3(float(p[0]), 0.0, float(p[2]))
+			piece.yaw_degrees = float(saved["yaw"])
+	_rebuild_furniture_geometry()
 	_gather_packages() # boxes always wait in one stack at the (current) delivery spot
 	_emit(&"state_loaded", {})
 

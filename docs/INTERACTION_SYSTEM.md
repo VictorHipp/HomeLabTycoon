@@ -140,6 +140,40 @@ Mecanismo en el Hito 2; funcionalidad completa en el Hito 4.
 
 **Comprobado** en `tests/integration/test_rack_placement.gd` y en los 4 escenarios de `tools\walkthrough.ps1` ([TEST_PLAN.md](TEST_PLAN.md)).
 
+### 8.2. Implementado (2026-11-16): reorganizar la habitación `[CONFIRMADO: 2026-11-16, ADR 0013]`
+
+El usuario pidió poder colocar a su gusto la cama, el escritorio con el PC, el router, la alfombra y la mesilla, y que el manual lo explique.
+
+- **Los muebles son estado de la simulación:**
+  - `SimWorld.furniture` contiene piezas `SimFurniture` (posición y giro) que vienen de `FurnitureDefinition` en `data/furniture/`;
+  - cada definición tiene el suelo que ocupa, lo que estorba a un cable (patas, cajonera, base de la silla), su contorno, su tablero y los modelos que la muestran;
+  - `obstacles` y `cable_obstacles` se recalculan a partir de las piezas. La distribución inicial reproduce exactamente las medidas anteriores (`tests/integration/test_furniture.gd`).
+- **Cómo se mueve:**
+  - clic derecho sin arrastre sobre la pieza en la vista general, como el rack. La alfombra se coge desde cualquier punto de ella;
+  - `R` gira 90° y el fantasma se tiñe de verde o de rojo, con el motivo escrito abajo.
+- **Lo que va con cada pieza (`SimDevice.furniture_id`):**
+  - el escritorio se lleva la silla, el monitor, el teclado, la torre del PC y la regleta. Un clic derecho en el PC o en el monitor mueve el escritorio;
+  - la mesilla se lleva el router que tiene encima.
+- **Router:** va de un tablero a otro, sobre la mesilla o el escritorio. No puede ir donde están el monitor y el teclado (`top_reserved`). Las reglas están en `SimWorld.top_problem` y `place_on_furniture`.
+- **Reglas al dejar una pieza (`SimWorld.furniture_problem`):**
+  - dentro de la habitación;
+  - sin chocar con otro mueble, un equipo o un paquete;
+  - sin tapar la puerta, la zona de entregas ni el espacio de trabajo del rack;
+  - lo que lleva también debe caber;
+  - sin el personaje en medio;
+  - cada cable enchufado se vuelve a tender y debe tener paso y longitud. Si no, se rechaza diciendo qué cable falla.
+
+  La alfombra no ocupa suelo: puede ir debajo de otros muebles.
+- **Después de mover:**
+  - la navegación se vuelve a hornear;
+  - la silla mira a su escritorio en cualquier giro;
+  - para usar un equipo, el personaje busca un sitio alcanzable a su alrededor, empezando por el lado de sus tomas.
+- **Guardado v3:** guarda la distribución. Las partidas v1 y v2 cargan con la distribución inicial.
+- **Comprobado:**
+  - `tests/integration/test_furniture.gd`;
+  - escenario `furniture` de `tools\walkthrough.ps1`, que mueve las cinco cosas con clics reales, con un rechazo de la cama y otro del router. Después usa el PC (ping al router), abre de cerca el router en el escritorio y guarda y carga. Comprueba también que nada atraviesa nada y que ningún cable atraviesa otro;
+  - un barrido en la simulación: con los cables de casa, el escritorio cabe en 621 combinaciones de sitio y giro (rejilla de 10 cm × 4 giros) y la mesilla en 1019. Lo que más limita es el tamaño de la habitación y de la cama.
+
 ## 9. UX del cableado (Hito 4) `[PROPUESTA]`
 
 Las reglas (compatibilidad, longitud, velocidad, estado del enlace) son de la simulación ([NETWORK_SIMULATION.md](NETWORK_SIMULATION.md) §4–5). Aquí solo se describe la experiencia.

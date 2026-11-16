@@ -18,12 +18,12 @@ const GROUPS := [
 	]],
 	["En la habitación", [
 		["Caminar hasta un punto / usar un objeto (ordenador, cajas, rack, regleta, router)", [&"interact"]],
-		["Mover el rack (sus cables se vuelven a tender si siguen llegando)", [&"secondary"]],
+		["Mover un mueble (cama, escritorio con el PC, mesilla, alfombra), el router o el rack; los cables se vuelven a tender si siguen llegando", [&"secondary"]],
 		["Cancelar el cable que estás tendiendo (vuelve al inventario) · abrir el menú", [&"close_interaction"]],
 		["Tender un cable: elegirlo en el inventario y seguir el panel «Paso 1 de 2 / 2 de 2»", "Clic izquierdo en el cable y luego en las tomas que brillan"],
 		["Abrir el manual", [&"open_manual"]],
 	]],
-	["Colocar un objeto", [
+	["Colocar o mover un objeto o un mueble", [
 		["Colocar en el sitio marcado en verde", [&"interact"]],
 		["Girar 90°", [&"rotate_object"]],
 		["Cancelar", [&"close_interaction"]],

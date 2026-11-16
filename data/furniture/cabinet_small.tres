@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="FurnitureDefinition" format=3]
+
+[ext_resource type="Script" path="res://sim/world/furniture_definition.gd" id="1_furn"]
+
+[resource]
+script = ExtResource("1_furn")
+id = &"cabinet_small"
+name_text = "la mesilla"
+blocks = Array[Rect2]([Rect2(-0.27, -0.2, 0.54, 0.4)])
+cable_parts = Array[Rect2]([Rect2(-0.27, -0.2, 0.54, 0.4)])
+area = Rect2(-0.27, -0.2, 0.54, 0.4)
+top = Rect2(-0.27, -0.2, 0.54, 0.4)
+top_height = 0.55
+model_path = "res://assets/models/furniture/cabinet_small.glb"

@@ -17,6 +17,7 @@
 >     - `wall`: rechazo con motivo y giro; al final, epílogo con «Desconectar todos los cables», «Recoger rack» rechazado con motivo, «Desmontar» ×2 y «Recoger rack»;
 >     - `far`: el cable no llega, se desconecta con clic derecho y se mueve el rack;
 >     - `blocking`: «no puedo llegar» y se mueve el rack con clic derecho.
+>     - `furniture` (2026-11-16, sin misión): reorganiza la habitación con clics reales. Mueve la alfombra, la cama (antes, un rechazo sobre el escritorio), la mesilla con el router, el escritorio girado con el PC y la regleta, y el router al escritorio (antes, un rechazo en el sitio del monitor). Después comprueba que todo se dibuja donde dice la simulación, que nada atraviesa nada y que ningún cable atraviesa otro. Luego usa el PC (ping al router), abre de cerca el router y guarda, cambia y carga la distribución.
 >
 >     En todos (2026-11-16): anillo bajo el puntero en cada clic y rojo en un clic en el vacío; ficha de producto (foto, miniatura, especificaciones, opiniones) y compra por la cesta; guía del cable «Paso 1 de 2 / 2 de 2», tomas iluminadas y flechas; cada cable dibujado se recorre con una esfera de su radio contra muebles, paredes, rodapié y equipos, y ningún equipo, monitor, teclado ni pila de cajas atraviesa otro objeto. En `basic`, además: un cable a medias se cancela al sentarse al ordenador y otro con Esc; ingreso pasivo cobrado a la hora con ×4; «Mi cuenta»; venta en «Segunda mano». En `wall`, el rack junto a la pared necesita los cables de corriente de 5 m.
 >
