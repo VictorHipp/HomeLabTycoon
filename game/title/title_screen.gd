@@ -22,6 +22,9 @@ func _ready() -> void:
 	_root.add_child(bg)
 	_menu = _build_menu()
 	_root.add_child(_menu)
+	var click_fx := ClickFeedback.new() # the same ring under every click as in the game
+	click_fx.name = "ClickFeedback"
+	add_child(click_fx)
 
 
 func _build_menu() -> Control:

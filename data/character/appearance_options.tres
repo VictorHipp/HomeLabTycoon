@@ -15,7 +15,7 @@ slots = Array[Dictionary]([{
 }, {
 "id": "f",
 "label": "Chica",
-"pieces": PackedStringArray("torso_f_", "hips_f_")
+"pieces": PackedStringArray("torso_f_", "hips_f_", "face_f_")
 }]
 }, {
 "default": "media",

@@ -219,8 +219,42 @@ func _title_and_creator() -> bool:
 		_fail("«Nueva partida» no abrió el creador de personaje")
 		return false
 	if scenario == "menu":
-		_note("T2. Creador: cambiar cada opción con sus botones")
-		await _shot("creador_inicial")
+		_note("T2. Creador: «Al azar», girar arrastrando, «Volver» y otra vez «Nueva partida»")
+		var fx := title.find_child("ClickFeedback", true, false)
+		if fx == null:
+			_fail("el título no tiene la respuesta visual a los clics")
+		var before := creator.look.to_dict()
+		var changed := false
+		for _i: int in 4: # random can repeat a look; four tries
+			if not await _press(creator.find_child("Random", true, false) as Button, "Al azar"):
+				return false
+			if creator.look.to_dict() != before:
+				changed = true
+				break
+		if not changed:
+			_fail("«Al azar» no cambió el aspecto")
+		_check_look(creator.preview_model, creator.look, "vista previa al azar")
+		await _shot("creador_al_azar")
+		var preview := creator.find_child("Preview", true, false) as Control
+		var turn_before: float = (creator.preview_model.get_parent() as Node3D).rotation.y
+		var centre := preview.get_global_rect().get_center()
+		await _drag(centre, Vector2(160.0, 0.0), MOUSE_BUTTON_LEFT)
+		if absf(angle_difference((creator.preview_model.get_parent() as Node3D).rotation.y, turn_before)) < 0.5:
+			_fail("arrastrar sobre el personaje no lo giró")
+		if not await _press(creator.find_child("Back", true, false) as Button, "Volver"):
+			return false
+		await _frames(10)
+		if title.creator != null or not _find_button(title, "Nueva partida"):
+			_fail("«Volver» no regresó al menú de inicio")
+			return false
+		if not await _press(_find_button(title, "Nueva partida"), "Nueva partida (otra vez)"):
+			return false
+		await _frames(30)
+		creator = title.creator
+		if creator == null or creator.look.to_dict() != CharacterAppearance.default_look().to_dict():
+			_fail("el creador no volvió a abrirse con el aspecto por defecto")
+			return false
+		_note("T3. Creador: cambiar cada opción con sus botones")
 		for step: Array in LOOK_STEPS:
 			var slot := String(step[0])
 			var presses := int(step[1])

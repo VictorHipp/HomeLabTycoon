@@ -21,13 +21,13 @@ El usuario pidió dos cosas:
    - `CharacterAppearance` (`game/character/`) guarda una opción por ranura y se graba en la sección `session` de la partida;
    - la simulación no lo conoce.
 3. **Opciones en datos:** `data/character/appearance_options.tres`. Cada opción de estilo lista los prefijos de las piezas que muestra, y una pieza se oculta si su ranura la reclama y la opción elegida no. Así, las mangas compartidas por dos prendas o los torsos que dependen del cuerpo y de la prenda funcionan sin reglas especiales.
-4. **Un solo modelo con todas las piezas:** las mismas articulaciones `J_*` que antes, así que la animación de andar y sentarse no cambia. «Chica» cambia el torso, la cintura, el pecho y la cadera de cada prenda, no las extremidades.
+4. **Un solo modelo con todas las piezas:** las mismas articulaciones `J_*` que antes, así que la animación de andar y sentarse no cambia. «Chica» cambia el torso, la cintura, el pecho y la cadera de cada prenda (y añade pestañas y labios), no las extremidades.
 5. **Color por personaje:** las piezas personalizables usan materiales `c_*`. Se sustituyen por copias con el color elegido en cada instancia, conservando los tres tonos de las caras; el material importado no se toca.
 6. **Compatibilidad:** sin aspecto guardado, o con valores desconocidos, se usa el aspecto por defecto, que es el del ADR 0012.
 
 ## Consecuencias
 
-- **Coste:** el modelo pasa de 3598 a 7896 triángulos en el archivo, pero cada aspecto muestra entre 2560 y 3614. Las piezas ocultas no se dibujan.
+- **Coste:** el modelo pasa de 3598 a 7932 triángulos en el archivo, pero cada aspecto muestra entre unos 2500 y 3600. Las piezas ocultas no se dibujan.
 - **Comprobación del proyecto:** `check_project.ps1` arranca la escena principal (el título) y, aparte, una partida nueva.
 - **Pendiente:**
   - una sola ranura de guardado;

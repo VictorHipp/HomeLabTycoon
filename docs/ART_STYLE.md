@@ -116,7 +116,7 @@ El usuario pidió (2026-11-16) más modelado en el personaje, con el nivel de ta
 - **Aspecto por defecto:** cacharrero de homelab con sobrecamisa salvia abierta (cuello y puños más oscuros, bolsillo), camiseta hueso con un estampado de terminal, vaqueros apagados con el bajo vuelto, cinturón, zapatillas, gafas, barba corta y pelo tallado en mechones.
 - **Personalización** (pedida por el usuario el 2026-11-16, [ADR 0014](adr/0014-title-menu-and-character-look.md)):
   - el modelo trae todas las piezas de todos los aspectos y el juego muestra las elegidas;
-  - **cuerpo:** chico o chica. Mismas articulaciones y extremidades; cambian el torso, la cintura, el pecho y la cadera de cada prenda;
+  - **cuerpo:** chico o chica. Mismas articulaciones y extremidades; cambian el torso, la cintura, el pecho y la cadera de cada prenda, y la chica lleva pestañas y labios;
   - **pelo:** corto con mechones, largo hasta los hombros, coleta o rapado;
   - **barba:** ninguna, corta, bigote o perilla. La boca va sobre la barba o sobre la piel;
   - **gafas:** sí o no;
@@ -133,7 +133,7 @@ El usuario pidió (2026-11-16) más modelado en el personaje, con el nivel de ta
 - **Colores nuevos de atrezo:** cuero y los colores por defecto de las ranuras `c_*`. No se usa ningún color funcional (LED, cables, resaltado).
 - **Mismas articulaciones que el maniquí:** `J_hip`, `J_knee`, `J_ankle`, `J_shoulder` y `J_elbow` (`_L` y `_R`), a las mismas alturas, para que `CharacterAnimator` y sus pruebas sigan valiendo. Cada pieza es rígida y cuelga de su articulación; rodillas y codos llevan una esfera de relleno para que no se abra un hueco al doblarse.
 - **La ropa sigue a las piezas rígidas:** la chaqueta acaba en la cadera y no hay nada largo, porque al sentarse los muslos giran 88°.
-- **Presupuesto:** cada aspecto muestra entre 2560 y 3614 triángulos (las combinaciones renderizadas). El archivo con todas las piezas tiene 7896 triángulos y 130 piezas.
+- **Presupuesto:** cada aspecto muestra entre unos 2500 y 3600 triángulos (en las combinaciones renderizadas). El archivo con todas las piezas tiene 7932 triángulos y 133 piezas.
 - **Comprobado:**
   - en el juego: vista general de pie, andando y sentado (recorrido automático y capturas del manual);
   - en una escena de prueba aparte: de pie, a media zancada y sentado. El antebrazo queda unos 5 cm por encima de la mesa (puño a ≈ 0,80 m, tablero a 0,75 m).
