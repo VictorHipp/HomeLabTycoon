@@ -224,11 +224,13 @@ func quick_save() -> void:
 
 func _notification(what: int) -> void:
 	# Closing the window: keep the game (the autosave; "Continuar" on the title picks it up).
-	if what == NOTIFICATION_WM_CLOSE_REQUEST and world != null and int(GameSettings.value("autosave_minutes")) > 0:
+	# Always, like leaving to the title: the setting only turns off the saves during play.
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and world != null:
 		autosave()
 
 
-func _unhandled_key_input(event: InputEvent) -> void:
+## Before the interface: a help text showing over a HUD button would swallow the key.
+func _input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"quick_save") and not event.is_echo():
 		get_viewport().set_input_as_handled()
 		quick_save()

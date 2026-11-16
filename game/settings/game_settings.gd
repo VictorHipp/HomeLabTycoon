@@ -27,7 +27,7 @@ const SPECS: Array[Dictionary] = [
 	{"id": "invert_y", "group": "Cámara", "label": "Invertir la inclinación", "kind": "bool", "default": false, "note": ""},
 	{"id": "autosave_minutes", "group": "Partida", "label": "Autoguardado", "kind": "choice", "default": 5,
 		"choices": [[0, "Desactivado"], [2, "Cada 2 minutos"], [5, "Cada 5 minutos"], [10, "Cada 10 minutos"]],
-		"note": "Minutos reales de juego. Además se guarda al llegar un pedido, al completar una misión y al salir. Nunca sustituye a tu partida guardada."},
+		"note": "Minutos reales de juego; también al llegar un pedido y al completar una misión. Al salir de la partida se autoguarda siempre, aunque esté desactivado. Nunca sustituye a tu partida guardada."},
 ]
 
 static var path: String = DEFAULT_PATH

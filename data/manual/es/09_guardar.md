@@ -19,6 +19,6 @@ El juego guarda por su cuenta en un archivo aparte, el **autoguardado**. Nunca s
 
 - **Cuándo:** cada 5 minutos reales con el reloj en marcha, al llegar un pedido, al completar una misión, al volver al menú principal y al cerrar la ventana. Aparece un momento «Autoguardado ✓» abajo a la derecha.
 - **Recuperarlo:** «Continuar», en el menú de inicio, carga lo más reciente, sea el autoguardado o tu partida.
-- **Cambiarlo:** en el menú, **Ajustes › Opciones**, puedes elegir cada 2, 5 o 10 minutos, o desactivarlo.
+- **Cambiarlo:** en el menú, **Ajustes › Opciones**, puedes elegir cada 2, 5 o 10 minutos, o desactivarlo. Desactivado, solo se autoguarda al salir de la partida.
 
 En **Opciones** están también la pantalla completa, la sincronización vertical, el suavizado de bordes, un contador de fotogramas por segundo y la cámara (sensibilidad al girar con el ratón e inversión de los ejes). Cada cambio se aplica al momento con `◀` y `▶`. Los ajustes se guardan en tu equipo, aparte de las partidas.

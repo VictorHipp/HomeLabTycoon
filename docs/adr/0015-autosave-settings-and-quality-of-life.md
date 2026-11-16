@@ -22,7 +22,8 @@ La revisión encontró además dos defectos:
 ## Decisión
 
 1. **Autoguardado en un archivo aparte** (`partida_auto.json`, junto a `partida.json`). Nunca sustituye a la partida que guarda el jugador.
-   - Se escribe cada N minutos reales con el reloj en marcha (5 por defecto; ajustable o desactivable), al llegar un pedido, al completar una misión, al volver al menú principal y al cerrar la ventana.
+   - Se escribe cada N minutos reales con el reloj en marcha (5 por defecto; ajustable o desactivable), al llegar un pedido y al completar una misión.
+   - Al volver al menú principal y al cerrar la ventana se escribe **siempre**, aunque esté desactivado: ese guardado es lo que sustituye al aviso de «se perderá lo no guardado».
    - Una marca breve «Autoguardado ✓» lo indica sin interrumpir.
    - No se escribe en ejecuciones sin ventana (comprobaciones).
 2. **«Continuar» en el título:** carga lo más reciente, sea la partida guardada o el autoguardado, y dice cuál es. Solo aparece si hay algo que continuar. «Cargar partida» sigue cargando la partida del jugador.
@@ -39,7 +40,7 @@ La revisión encontró además dos defectos:
 6. **Reloj con el teclado:** `Espacio` pausa y reanuda a la velocidad anterior; `1`, `2` y `3` ponen ×1, ×2 y ×4. `F5` es un guardado rápido. Son acciones con nombre (`InputBindings`), aparecen en «Controles» y no actúan mientras se usa la pantalla del ordenador o se escribe.
 7. **Etiqueta junto al cursor** en la vista general (`HoverTip`): nombre de lo que hay debajo y qué hace cada botón del ratón. Usa las mismas reglas que los clics. Adelanta la parte de «etiqueta al pasar el ratón» del Hito 2 ([ROADMAP](../ROADMAP.md) §2).
 8. **Menú sin partida:** el título abre el mismo menú del juego sin los botones de partida («Manual y ajustes»), y `F1` abre allí el manual. `Esc` en el creador vuelve al título.
-9. **`Esc` en la vista general se lee antes que la interfaz** (`_input`), para que una ayuda emergente no se lo quede.
+9. **Las teclas del juego (`Esc`, `R`, reloj, `F5`) se leen antes que la interfaz** (`_input`), para que una ayuda emergente no se las quede.
 10. **Texto de fin de misión en los datos:** `MissionDefinition.completion_text` (antes estaba en el código de la sesión).
 
 ## Consecuencias

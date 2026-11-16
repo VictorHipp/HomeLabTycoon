@@ -160,6 +160,7 @@ Todo contenido se valida con pruebas automáticas: ids únicos, referencias que 
 - Acciones con nombre en el *Input Map*: `move_to`, `select`, `context_menu`, `camera_rotate`, `camera_zoom`, `camera_pan`, `close_interaction`, `time_speed_*`.
 - **Nunca se leen teclas directamente**, para poder reasignar controles y añadir mando en el futuro.
 - La entrada se enruta según el estado de interacción: vista general, vista cercana o UI con foco de texto (la terminal captura el teclado).
+- **Implementado** (`game/input/input_bindings.gd`, 2026-11-16): además de las de cámara e interacción, `time_pause` (`Espacio`), `time_speed_1`, `time_speed_2`, `time_speed_4` (`1`, `2`, `3`) y `quick_save` (`F5`). Las teclas del juego (`Esc`, `R`, reloj, `F5`) se leen en `_input`, antes que la interfaz, porque una ayuda emergente a la vista se queda con las teclas que llegan después; no actúan mientras se escribe ni en la pantalla del ordenador ([ADR 0015](adr/0015-autosave-settings-and-quality-of-life.md)).
 
 ## 11. Rendimiento `[PROPUESTA]`
 

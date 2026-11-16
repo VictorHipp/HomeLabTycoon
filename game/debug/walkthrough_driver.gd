@@ -407,10 +407,34 @@ func _menu_steps() -> void:
 	await _frames(5)
 	if not FileAccess.file_exists(SaveService.slot_path) or not s.hud._toast.text.contains("guardada"):
 		_fail("F5 no guardó la partida («%s»)" % s.hud._toast.text)
+	_note("M1b2. Autoguardado: al cumplirse el intervalo (con su marca) y al cerrar la ventana")
+	if FileAccess.file_exists(SaveService.autosave_path()):
+		_fail("ya había un autoguardado antes de tiempo")
+	s._autosave_clock = 100000.0 # the interval has passed
+	await _frames(3)
+	if not FileAccess.file_exists(SaveService.autosave_path()) or s.hud.find_child("SavedMark", true, false) == null:
+		_fail("al cumplirse el intervalo no se autoguardó o no apareció la marca «Autoguardado»")
+	if s._autosave_clock > 5.0:
+		_fail("el contador del autoguardado no volvió a empezar")
+	var first_stamp := float((SaveService.read(SaveService.autosave_path())["document"] as Dictionary).get("saved_at", 0.0))
+	await _frames(10)
+	GameSettings.set_value("autosave_minutes", 0)
+	s.notification(Node.NOTIFICATION_WM_CLOSE_REQUEST) # what closing the window sends
+	GameSettings.set_value("autosave_minutes", 5)
+	var close_stamp := float((SaveService.read(SaveService.autosave_path())["document"] as Dictionary).get("saved_at", 0.0))
+	if close_stamp <= first_stamp:
+		_fail("cerrar la ventana no autoguardó (con el autoguardado periódico desactivado)")
+	if absf(float(((SaveService.read()["document"] as Dictionary)["sim"] as Dictionary)["time_minutes"]) - s.world.time_minutes) < 0.001:
+		_fail("el autoguardado tocó la partida guardada por el jugador")
 	_note("M1c. Ajustes › Opciones: cada cambio se aplica y se guarda en el archivo de ajustes")
 	# The cursor is still on a button of the top bar, with its help text showing: Esc must open
 	# the menu all the same.
 	await _frames(60)
+	s.hud._toast.text = ""
+	_key(KEY_F5)
+	await _frames(5)
+	if not s.hud._toast.text.contains("guardada"):
+		_fail("con una ayuda emergente a la vista, F5 no guardó")
 	_key(KEY_ESCAPE)
 	await _frames(5)
 	if not s.menu.visible:
@@ -2324,6 +2348,8 @@ func _finish() -> void:
 	# The furniture and menu scenarios do not play the mission.
 	var ok := _failures.is_empty() and (tracker.completed or scenario in ["furniture", "menu"])
 	_note("Misión completada: %s · estado %s" % [tracker.completed, str(tracker.status)])
+	if tracker.completed and not FileAccess.file_exists(SaveService.autosave_path()):
+		_fail("la partida no se autoguardó ni al llegar el pedido ni al completar la misión")
 	_note("Créditos %d · XP %d · nivel %d" % [s.world.credits, s.world.xp, s.world.level()])
 	_write_log()
 	print("WALKTHROUGH %s %s (%d fallos)" % [scenario, "OK" if ok else "FAILED", _failures.size()])

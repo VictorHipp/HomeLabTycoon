@@ -84,27 +84,45 @@ func closeup_device() -> int:
 
 # ------------------------------------------------------------------- input --
 
-## Esc in the overview: give up the cable being laid, or open the menu. Read before the
-## interface: a help text showing over a HUD button (a popup) would swallow the key otherwise.
-## In the other modes Esc is read in _unhandled_input, after this (so the Esc that cancels a
-## placement does not also open the menu).
+## The keys of every mode (Esc and R), read before the interface: a help text showing over a
+## HUD button (a popup) would swallow them otherwise. One key does one thing: the Esc that
+## cancels a placement does not also open the menu. The computer screen reads its own Esc.
 func _input(event: InputEvent) -> void:
-	if not event.is_action_pressed(&"close_interaction") or event.is_echo():
+	if event.is_echo():
 		return
-	if mode == Mode.CONSOLE: # before the terminal's text field sees it
-		get_viewport().set_input_as_handled()
-		_close_console()
+	if event.is_action_pressed(&"rotate_object"):
+		if mode == Mode.CLOSEUP and _is_rack(_closeup_device):
+			get_viewport().set_input_as_handled()
+			_toggle_rack_side()
+		elif mode == Mode.PLACEMENT:
+			get_viewport().set_input_as_handled()
+			_ghost_yaw = fposmod(_ghost_yaw + 90.0, 360.0)
+			_update_ghost()
 		return
-	if not (mode in [Mode.OVERVIEW, Mode.APPROACH]):
+	if not event.is_action_pressed(&"close_interaction"):
 		return
-	get_viewport().set_input_as_handled()
-	hover_tip.hide_tip()
-	if cable_tool.active():
-		# First Esc gives up the cable being laid (its plugged end too: ADR 0011).
-		cable_tool.cancel(TranslationServer.translate("Cable cancelado: ha vuelto al inventario."))
-		_update_tool_text()
-	else:
-		session.menu.open()
+	match mode:
+		Mode.CONSOLE: # before the terminal's text field sees it
+			get_viewport().set_input_as_handled()
+			_close_console()
+		Mode.CLOSEUP:
+			get_viewport().set_input_as_handled()
+			if _mount_device >= 0:
+				_end_mount_mode()
+			else:
+				leave()
+		Mode.PLACEMENT:
+			get_viewport().set_input_as_handled()
+			_cancel_placement()
+		Mode.OVERVIEW, Mode.APPROACH:
+			get_viewport().set_input_as_handled()
+			hover_tip.hide_tip()
+			if cable_tool.active():
+				# First Esc gives up the cable being laid (its plugged end too: ADR 0011).
+				cable_tool.cancel(TranslationServer.translate("Cable cancelado: ha vuelto al inventario."))
+				_update_tool_text()
+			else:
+				session.menu.open()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -138,13 +156,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				_click_closeup(button.position)
 			elif button != null and button.pressed and event.is_action(&"secondary"):
 				_right_click_closeup(button.position)
-			elif event.is_action_pressed(&"close_interaction"):
-				if _mount_device >= 0:
-					_end_mount_mode()
-				else:
-					leave()
-			elif event.is_action_pressed(&"rotate_object") and _is_rack(_closeup_device):
-				_toggle_rack_side()
 		Mode.PLACEMENT:
 			if motion != null:
 				_move_ghost(motion.position)
@@ -159,11 +170,6 @@ func _unhandled_input(event: InputEvent) -> void:
 					_right_down = false
 					if not session.rig.is_dragging() and button.position.distance_to(_right_press_pos) <= OverviewCameraRig.DRAG_THRESHOLD_PX:
 						_cancel_placement()
-			elif event.is_action_pressed(&"close_interaction"):
-				_cancel_placement()
-			elif event.is_action_pressed(&"rotate_object"):
-				_ghost_yaw = fposmod(_ghost_yaw + 90.0, 360.0)
-				_update_ghost()
 
 
 ## Raycast from the camera. With `areas` (ports, rack units) an area only counts when no

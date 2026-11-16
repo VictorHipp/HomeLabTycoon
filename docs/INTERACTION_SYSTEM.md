@@ -98,6 +98,10 @@ Mecanismo en el Hito 2; funcionalidad completa en el Hito 4.
 - **Si llega un pedido con el personaje encima de la zona:** el personaje se aparta al suelo transitable más cercano.
 - **Comprobado** en `tests/integration/test_deliveries.gd` y en el recorrido: varios pedidos seguidos en `wall` y el contador en cada caja.
 
+### 3.1. Implementado (2026-11-16): etiqueta junto al cursor
+
+En la vista general, al pasar el ratón por el ordenador, las cajas, un equipo o un mueble, una etiqueta junto al cursor (`game/ui/hover_tip.gd`) muestra su nombre y lo que hace cada botón del ratón («Clic izquierdo: verlo de cerca», «Clic derecho: cambiar de sitio»). El texto sale de las mismas reglas que los clics (`InteractionManager.hover_info`) y de las teclas reales del *Input Map*. Se oculta sobre la interfaz, al girar la cámara, en pausa y fuera de la vista general. **No hecho:** el contorno del objeto y el estado breve ([ADR 0015](adr/0015-autosave-settings-and-quality-of-life.md)).
+
 ## 8. Colocación de objetos (Hito 3) `[PROPUESTA]`
 
 - **Activación:** desde el inventario («Colocar») o desde un objeto ya colocado («Mover»).
