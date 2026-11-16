@@ -6,7 +6,7 @@
 script = ExtResource("1_e4cj4")
 item_id = &"rack_12u_open"
 title = "Rackwell RW-12 — Rack abierto de suelo de 19\" con 12U y cuatro postes, para homelab y pequeña oficina"
-bullets = PackedStringArray("12 unidades (12U) de 19\": sitio para el switch, los servidores y lo que vaya llegando.", "Estructura abierta de cuatro postes: llegas al frontal y a la trasera sin quitar paneles.", "Unidades numeradas en los postes para montar cada equipo a la altura exacta.", "Pide 50 cm libres delante y detrás para trabajar con comodidad en el frontal y en la trasera.", "Se puede cambiar de sitio con los equipos montados.")
+bullets = PackedStringArray("12 unidades (12U) de 19\": sitio para el switch, los servidores y lo que vaya llegando.", "Estructura abierta de cuatro postes: llegas al frontal y a la trasera sin quitar paneles.", "Montaje por unidades: eliges la U exacta (de U1 a U12) donde va cada equipo.", "Pide 50 cm libres delante y detrás para trabajar con comodidad en el frontal y en la trasera.", "Se puede cambiar de sitio con los equipos montados.")
 description = "El RW-12 es el punto de partida de muchos homelabs: un rack de suelo abierto, sin puertas ni paneles laterales, con la medida estándar de 19 pulgadas.
 
 Cada unidad (U) mide 44,45 mm de alto, así que un servidor «1U» ocupa exactamente un hueco. Los equipos se montan por delante y los cables de corriente suelen ir por la trasera, donde tienen la entrada de alimentación.
@@ -30,8 +30,8 @@ reviews = Array[Dictionary]([{
 "author": "Lucía P.",
 "date": "hace 3 semanas",
 "stars": 5,
-"text": "Los postes vienen numerados por unidades y así no montas nada a media altura.",
-"title": "Sólido y bien numerado",
+"text": "Eliges la unidad exacta de cada equipo, así que no montas nada a media altura.",
+"title": "Sólido y fácil de montar",
 "verified": true
 }, {
 "author": "Jorge M.",
