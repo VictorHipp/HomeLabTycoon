@@ -30,7 +30,7 @@ Tres rasgos de firma:
 
 | Familia | Formas | Intención |
 |---|---|---|
-| Personas | Volúmenes redondeados, cápsulas, curvas suaves | Cercanía, expresividad |
+| Personas | Volúmenes redondeados, cápsulas, curvas suaves; talla facetada sin bisel en el jugador ([ADR 0012](adr/0012-faceted-player-character.md)) | Cercanía, expresividad |
 | Mobiliario doméstico | Blando, madera, esquinas redondeadas | Hogar, calidez |
 | Equipos informáticos | Rectangulares con bisel marcado y rejillas como inserciones simples | Técnico pero amable |
 | Espacios empresariales y CPD | Angulosos, repetitivos, modulares | Escala, orden, profesionalidad |
@@ -108,6 +108,8 @@ Valores sRGB de partida; se ajustarán en el spike visual (ROADMAP, Hito 1).
 
 ### 6.1 Personaje del jugador provisional `[CONFIRMADO: 2026-11-16, modelado facetado pedido por el usuario]`
 
+Decisión registrada en [ADR 0012](adr/0012-faceted-player-character.md).
+
 El usuario pidió (2026-11-16) más modelado en el personaje, con el nivel de talla de una imagen de referencia facetada, pero con ropa y estilo del juego. Solo está confirmado ese **modelado facetado**. El rig estándar, el atlas de expresiones y los accesorios modulares de §6 siguen siendo `[PROPUESTA]`.
 
 - **Modelo:** `character_player` (`assets/models/characters/`), generado por `build_character_player` en `tools/blender/build_prototype_models.py`. Sustituye al maniquí en el juego (`PlayerCharacter.MODEL`).
@@ -122,7 +124,10 @@ El usuario pidió (2026-11-16) más modelado en el personaje, con el nivel de ta
 - **Mismas articulaciones que el maniquí:** `J_hip`, `J_knee`, `J_ankle`, `J_shoulder` y `J_elbow` (`_L` y `_R`), a las mismas alturas, para que `CharacterAnimator` y sus pruebas sigan valiendo. Cada pieza es rígida y cuelga de su articulación; rodillas y codos llevan una esfera de relleno para que no se abra un hueco al doblarse.
 - **La ropa sigue a las piezas rígidas:** la chaqueta acaba en la cadera y no hay nada largo, porque al sentarse los muslos giran 88°.
 - **Presupuesto:** 3598 triángulos, 76 piezas y 33 materiales.
-- **Comprobado:** con luz del juego, de pie, a media zancada y sentado ante la mesa, sin atravesar la mesa ni la silla.
+- **Comprobado:**
+  - en el juego: vista general de pie, andando y sentado (recorrido automático y capturas del manual);
+  - en una escena de prueba aparte: de pie, a media zancada y sentado. El antebrazo queda unos 5 cm por encima de la mesa (puño a ≈ 0,80 m, tablero a 0,75 m).
+  - Al sentarse, los muslos se hunden un poco en el asiento, igual que con el maniquí; desde la cámara del juego no se ve.
 
 ## 7. Objetos y dispositivos
 
