@@ -21,7 +21,9 @@ Conventions (docs/ART_STYLE.md §8):
 import argparse
 import math
 import os
+import random
 import sys
+import zlib
 
 import bmesh
 import bpy
@@ -50,6 +52,11 @@ MATERIALS = {
     "cinta": {"color": "#9C7046", "rough": 0.6},              # extra: packing tape
     "piel": {"color": "#E2AE8A", "rough": 0.8},               # extra: mannequin skin
     "pelo": {"color": "#3B2A20", "rough": 0.9},               # extra: mannequin hair
+    "salvia_oscura": {"color": "#6E8C6A", "rough": 0.85},     # extra: jacket collar and cuffs
+    "vaquero": {"color": "#4A5770", "rough": 0.9},            # extra: jeans (muted, not cable blue)
+    "vaquero_claro": {"color": "#66748C", "rough": 0.9},      # extra: rolled-up jeans hem
+    "cuero": {"color": "#6B4A32", "rough": 0.7},              # extra: belt
+    "castano": {"color": "#5E4331", "rough": 0.9},            # extra: character hair and beard
     "puerto": {"color": "#101318", "rough": 0.9},             # socket interiors
     "cable_cobre": {"color": "#3B82C4", "rough": 0.6},
     "cristal": {"color": "#BFE3F2", "rough": 0.1, "alpha": 0.35},
@@ -605,6 +612,367 @@ def build_mannequin():
         sphere(f"eye_{sx}", 0.018, (sx * 0.05, -0.135, 1.60), "tinta", segments=8, rings=6)
 
 
+# ------------------------------------------------------ faceted character ---
+# The player character (user request 2026-11-16): faceted low-poly modelling, flat shaded, every
+# triangle painted with one of three tones of its colour (fixed seeds: the .glb is reproducible).
+# Same joints as the mannequin, so CharacterAnimator and its tests apply unchanged.
+TONES = (1.0, 0.87, 1.09)   # sRGB factor of each tone (0 = the palette colour)
+TONE_ODDS = (0.56, 0.24)    # chance of tone 0 and tone 1; tone 2 takes the rest
+
+
+def _rng(name):
+    return random.Random(zlib.crc32(name.encode("utf-8")))
+
+
+def tone_mat(name, tone):
+    """Palette material `name`, darkened or lightened by TONES[tone]."""
+    if tone == 0:
+        return mat(name)
+    key = f"{name}_t{tone}"
+    if key not in MATERIALS:
+        spec = dict(MATERIALS[name])
+        h = spec["color"].lstrip("#")
+        rgb = [min(255, round(int(h[i:i + 2], 16) * TONES[tone])) for i in (0, 2, 4)]
+        spec["color"] = "#%02X%02X%02X" % tuple(rgb)
+        MATERIALS[key] = spec
+    return mat(key)
+
+
+def _finish(name, bm, material, tones=True):
+    """Object from a closed bmesh (vertices in world space): outward normals, triangulated,
+    flat shaded and, with `tones`, each triangle in one of the tones of `material`."""
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    rng = _rng(name)
+    for f in bm.faces:
+        f.smooth = False
+        if tones:
+            r = rng.random()
+            f.material_index = 0 if r < TONE_ODDS[0] else (1 if r < TONE_ODDS[0] + TONE_ODDS[1] else 2)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = _link(bpy.data.objects.new(name, me))
+    for t in range(3 if tones else 1):
+        me.materials.append(tone_mat(material, t))
+    return ob
+
+
+def _axis_point(axis, t, u, v):
+    if axis == "z":
+        return Vector((u, v, t))
+    if axis == "y":
+        return Vector((u, t, v))
+    return Vector((t, u, v))
+
+
+def _ring_points(ring, sides, axis, a0=None, a1=None, shrink=0.0, jitter=0.0, rng=None):
+    """One cross-section. ring = (t, cu, cv, ru, rv[, ex]): superellipse of radii ru, rv
+    (exponent ex: 2 = ellipse, higher = boxier) centred on (cu, cv), at t along `axis`.
+    Angle -pi/2 points to -v (the front for a vertical loft). Closed ring of `sides` points
+    (a face, not an edge, looks to the front), or the open arc a0..a1 (sides + 1 points)."""
+    t, cu, cv, ru, rv = ring[:5]
+    ex = ring[5] if len(ring) > 5 else 2.0
+    ru, rv = max(ru - shrink, 0.0), max(rv - shrink, 0.0)
+    if a0 is None:
+        angles = [-math.pi / 2 + math.pi / sides + 2 * math.pi * i / sides for i in range(sides)]
+    else:
+        angles = [a0 + (a1 - a0) * i / sides for i in range(sides + 1)]
+    pts = []
+    for a in angles:
+        c, s = math.cos(a), math.sin(a)
+        k = 1.0 + (rng.uniform(-jitter, jitter) if rng is not None and jitter > 0.0 else 0.0)
+        u = cu + k * ru * math.copysign(abs(c) ** (2.0 / ex), c)
+        v = cv + k * rv * math.copysign(abs(s) ** (2.0 / ex), s)
+        pts.append(_axis_point(axis, t, u, v))
+    return pts
+
+
+def loft(name, rings, material, sides=8, axis="z", jitter=0.0, tones=True):
+    """Faceted tube through `rings` (see _ring_points), capped at both ends; a ring with zero
+    radii ends the tube in a point."""
+    rng = _rng(name + "/jitter")
+    bm = bmesh.new()
+    loops = []
+    for ring in rings:
+        if ring[3] <= 1e-6 and ring[4] <= 1e-6:
+            loops.append([bm.verts.new(_axis_point(axis, ring[0], ring[1], ring[2]))])
+        else:
+            loops.append([bm.verts.new(p) for p in _ring_points(ring, sides, axis, jitter=jitter, rng=rng)])
+    for a, b in zip(loops, loops[1:]):
+        if len(a) == 1 or len(b) == 1:
+            pole, ring = (a[0], b) if len(a) == 1 else (b[0], a)
+            for i in range(len(ring)):
+                bm.faces.new((pole, ring[i], ring[(i + 1) % len(ring)]))
+            continue
+        for i in range(sides):
+            j = (i + 1) % sides
+            bm.faces.new((a[i], a[j], b[j], b[i]))
+    for end in (loops[0], loops[-1]):
+        if len(end) > 2:
+            bm.faces.new(end)
+    return _finish(name, bm, material, tones)
+
+
+def shell(name, rings, material, centre, half_spans, thickness, sides=10, jitter=0.0, tones=True):
+    """Thick open garment around a vertical axis (open jacket, collar, beard, headphone band):
+    on each ring the arc centre +- half_span (rad; -pi/2 = front), outer surface on the ring,
+    inner surface `thickness` further in, all edges closed."""
+    rng = _rng(name + "/jitter")
+    bm = bmesh.new()
+    outer, inner = [], []
+    for ring, h in zip(rings, half_spans):
+        outer.append([bm.verts.new(p) for p in _ring_points(
+            ring, sides, "z", centre - h, centre + h, jitter=jitter, rng=rng)])
+        inner.append([bm.verts.new(p) for p in _ring_points(
+            ring, sides, "z", centre - h, centre + h, shrink=thickness)])
+    last = len(rings) - 1
+    for r in range(last):
+        for k in range(sides):
+            bm.faces.new((outer[r][k], outer[r][k + 1], outer[r + 1][k + 1], outer[r + 1][k]))
+            bm.faces.new((inner[r][k], inner[r + 1][k], inner[r + 1][k + 1], inner[r][k + 1]))
+        for k in (0, sides):
+            bm.faces.new((outer[r][k], outer[r + 1][k], inner[r + 1][k], inner[r][k]))
+    for r in (0, last):
+        for k in range(sides):
+            bm.faces.new((outer[r][k], outer[r][k + 1], inner[r][k + 1], inner[r][k]))
+    return _finish(name, bm, material, tones)
+
+
+def hull(name, points, material, tones=True):
+    """Convex faceted chunk through `points` (hair tufts, nose, ears, hands, laces)."""
+    bm = bmesh.new()
+    for p in points:
+        bm.verts.new(Vector(p))
+    res = bmesh.ops.convex_hull(bm, input=bm.verts[:])
+    junk = list({g for g in res["geom_interior"] + res["geom_unused"] if isinstance(g, bmesh.types.BMVert)})
+    if junk:
+        bmesh.ops.delete(bm, geom=junk, context="VERTS")
+    return _finish(name, bm, material, tones)
+
+
+def ball(name, centre, radius, material, sides=8, rings=4):
+    """Low-poly sphere (joint fills at knees and elbows)."""
+    cx, cy, cz = centre
+    spec = []
+    for k in range(rings + 1):
+        phi = -math.pi / 2 + math.pi * k / rings
+        r = radius * math.cos(phi) if 0 < k < rings else 0.0
+        spec.append((cz + radius * math.sin(phi), cx, cy, r, r))
+    return loft(name, spec, material, sides=sides)
+
+
+def _ring_at(rings, z):
+    """(cx, cy, rx, ry, ex) of a vertical loft at height z (linear between rings)."""
+    for a, b in zip(rings, rings[1:]):
+        if a[0] <= z <= b[0]:
+            f = (z - a[0]) / (b[0] - a[0])
+            cx, cy, rx, ry = (a[i] + (b[i] - a[i]) * f for i in (1, 2, 3, 4))
+            return cx, cy, rx, ry, (a[5] if len(a) > 5 else 2.0)
+    raise ValueError(f"z={z} outside the loft")
+
+
+def _front_y(rings, x, z):
+    """y of the front (-Y) surface of a vertical loft at (x, z), without jitter."""
+    cx, cy, rx, ry, ex = _ring_at(rings, z)
+    q = min(abs(x - cx) / rx, 1.0) ** ex
+    return cy - ry * (1.0 - q) ** (1.0 / ex)
+
+
+def patch(name, rings, x0, x1, z0, z1, depth, material, lift=0.0, steps=4):
+    """Thin slab lying on the front of a vertical loft (pocket, buckle, shirt print)."""
+    pts = []
+    for i in range(steps + 1):
+        x = x0 + (x1 - x0) * i / steps
+        for z in (z0, z1):
+            y = _front_y(rings, x, z) - lift
+            pts += [(x, y + 0.004, z), (x, y - depth, z)]
+    return hull(name, pts, material, tones=False)
+
+
+# Vertical cross-sections (z, cx, cy, rx, ry[, ex]) of the character, in metres.
+JACKET = [(0.83, 0, 0.000, 0.188, 0.125, 2.4), (0.95, 0, 0.000, 0.182, 0.122, 2.4),
+          (1.10, 0, -0.004, 0.200, 0.132, 2.4), (1.26, 0, -0.008, 0.215, 0.138, 2.4),
+          (1.36, 0, 0.000, 0.220, 0.125, 2.4), (1.395, 0, 0.004, 0.190, 0.112, 2.4),
+          (1.425, 0, 0.008, 0.140, 0.095, 2.4)]
+JACKET_OPEN = (0.17, 0.17, 0.19, 0.22, 0.28, 0.40, 0.55)   # half opening at the front (rad)
+SHIRT = [(0.955, 0, 0.000, 0.158, 0.100, 2.4), (1.00, 0, 0.000, 0.158, 0.100, 2.4),
+         (1.15, 0, -0.004, 0.175, 0.108, 2.4), (1.26, 0, -0.008, 0.188, 0.112, 2.4),
+         (1.36, 0, 0.000, 0.188, 0.100, 2.4), (1.425, 0, 0.008, 0.115, 0.075, 2.4),
+         (1.47, 0, 0.010, 0.055, 0.050, 2.2)]
+PELVIS = [(0.73, 0, 0.005, 0.095, 0.065, 2.2), (0.785, 0, 0.000, 0.158, 0.098, 2.4),
+          (0.88, 0, 0.000, 0.160, 0.100, 2.4), (0.97, 0, 0.000, 0.152, 0.096, 2.4)]
+BELT = [(0.925, 0, 0.000, 0.159, 0.104, 2.4), (0.965, 0, 0.000, 0.157, 0.103, 2.4)]
+HEAD = [(1.470, 0, -0.050, 0.035, 0.030), (1.490, 0, -0.035, 0.075, 0.075),
+        (1.530, 0, -0.010, 0.105, 0.105), (1.590, 0, 0.000, 0.122, 0.122),
+        (1.650, 0, 0.005, 0.124, 0.124), (1.710, 0, 0.012, 0.108, 0.112),
+        (1.750, 0, 0.015, 0.068, 0.072), (1.765, 0, 0.015, 0.0, 0.0)]
+# Hairline height by angular distance from the front (rad): forehead, temples, over the ears, nape.
+HAIRLINE = ((0.0, 1.690), (0.7, 1.668), (1.25, 1.642), (1.75, 1.636), (2.2, 1.555), (math.pi, 1.500))
+
+
+def _hairline(d):
+    for (d0, z0), (d1, z1) in zip(HAIRLINE, HAIRLINE[1:]):
+        if d <= d1:
+            return z0 + (z1 - z0) * (d - d0) / (d1 - d0)
+    return HAIRLINE[-1][1]
+
+
+def _head_point(z, a, out):
+    cx, cy, rx, ry, _ex = _ring_at(HEAD, z)
+    return Vector((cx + (rx + out) * math.cos(a), cy + (ry + out) * math.sin(a), z))
+
+
+def _build_hair():
+    rng = _rng("hair")
+    pts = [(0.0, 0.015, 1.786)]
+    levels = [1.50 + 0.025 * i for i in range(11)]
+    for k in range(20):
+        a = -math.pi / 2 + 2 * math.pi * k / 20
+        line = _hairline(abs(math.remainder(a + math.pi / 2, 2 * math.pi)))
+        for z in [line] + [z for z in levels if z > line + 0.01]:
+            pts.append(tuple(_head_point(z, a, 0.014 + rng.uniform(0.0, 0.008))))
+    hull("hair", pts, "castano")
+    # Carved locks lying on the hair: (angle from the front, height, length, sweep, width).
+    # The fringe is swept to one side, the top backwards and the back downwards.
+    fringe, top, side, nape = (0.7, 0.2, 0.55), (0.3, 0.8, 0.45), (0.0, 0.8, -0.3), (0.0, 0.45, -1.0)
+    tufts = [(-0.55, 1.700, 0.040, fringe, 0.034), (-0.15, 1.712, 0.046, fringe, 0.036),
+             (0.25, 1.708, 0.044, fringe, 0.034), (0.62, 1.692, 0.036, (0.6, 0.4, 0.3), 0.030),
+             (-0.35, 1.748, 0.040, top, 0.036), (0.30, 1.750, 0.040, top, 0.036),
+             (-1.05, 1.690, 0.034, side, 0.030), (1.05, 1.690, 0.034, side, 0.030),
+             (-1.60, 1.668, 0.030, side, 0.028), (1.60, 1.668, 0.030, side, 0.028),
+             (math.pi - 0.7, 1.720, 0.036, nape, 0.034), (math.pi + 0.7, 1.720, 0.036, nape, 0.034),
+             (math.pi, 1.660, 0.034, nape, 0.034)]
+    for i, (d, z, length, sweep, w) in enumerate(tufts):
+        a = -math.pi / 2 + d
+        base = _head_point(z, a, 0.012)
+        n = Vector((math.cos(a), math.sin(a), (z - 1.60) / 0.12)).normalized()
+        side = Vector((-math.sin(a), math.cos(a), 0.0))
+        up = n.cross(side).normalized()
+        tip = base + (n * 0.35 + Vector(sweep).normalized()).normalized() * length \
+            + side * rng.uniform(-0.008, 0.008)
+        w += rng.uniform(-0.004, 0.004)
+        hull(f"hair_lock_{i}", [tuple(p) for p in (base - n * 0.022, base + side * w, base - side * w,
+                                                   base + up * w * 0.8, base - up * w * 0.6, tip)], "castano")
+
+
+def _build_face():
+    for sx in (-1, 1):
+        hull(f"ear_{sx}", [(sx * 0.116, -0.012, 1.565), (sx * 0.116, 0.022, 1.575), (sx * 0.116, 0.018, 1.632),
+                           (sx * 0.116, -0.010, 1.625), (sx * 0.136, -0.004, 1.572), (sx * 0.141, 0.018, 1.585),
+                           (sx * 0.139, 0.016, 1.628), (sx * 0.134, -0.002, 1.620)], "piel")
+        box(f"eye_{sx}", (0.022, 0.012, 0.017), (sx * 0.042, -0.116, 1.603), "tinta")
+        box(f"brow_{sx}", (0.042, 0.012, 0.012), (sx * 0.044, -0.119, 1.638), "pelo", rot=(0, sx * 0.16, 0))
+        # Glasses: two open rims, bridge, hinges and temples back to the ears.
+        gx, gy, gz, w, h, bar = sx * 0.045, -0.129, 1.604, 0.058, 0.042, 0.007
+        box(f"glasses_top_{sx}", (w, 0.006, bar), (gx, gy, gz + h / 2), "tinta")
+        box(f"glasses_bottom_{sx}", (w, 0.006, bar), (gx, gy, gz - h / 2), "tinta")
+        box(f"glasses_in_{sx}", (bar, 0.006, h), (gx - sx * w / 2, gy, gz), "tinta")
+        box(f"glasses_out_{sx}", (bar, 0.006, h), (gx + sx * w / 2, gy, gz), "tinta")
+        box(f"glasses_hinge_{sx}", (0.056, 0.006, 0.007), (sx * 0.101, -0.127, gz + 0.012), "tinta")
+        box(f"glasses_temple_{sx}", (0.006, 0.124, 0.007), (sx * 0.128, -0.064, gz + 0.012), "tinta")
+    box("glasses_bridge", (0.022, 0.006, 0.006), (0.0, -0.129, 1.611), "tinta")
+    hull("nose", [(0.0, -0.110, 1.622), (0.017, -0.112, 1.578), (-0.017, -0.112, 1.578), (0.0, -0.146, 1.572),
+                  (0.011, -0.134, 1.565), (-0.011, -0.134, 1.565), (0.0, -0.122, 1.561)], "piel")
+    # Short beard: chin and jaw (front arc), sideburns in front of the ears, moustache, mouth.
+    shell("beard", [(1.452, 0, -0.056, 0.038, 0.034), (1.478, 0, -0.040, 0.074, 0.072),
+                    (1.505, 0, -0.024, 0.097, 0.096), (1.530, 0, -0.011, 0.112, 0.111),
+                    (1.552, 0, -0.006, 0.119, 0.118)],
+          "castano", -math.pi / 2, (1.6, 1.75, 1.85, 1.9, 1.9), 0.022, sides=12, jitter=0.02)
+    for sx, centre in ((1, -0.35), (-1, math.pi + 0.35)):
+        shell(f"sideburn_{sx}", [(1.530, 0, -0.010, 0.116, 0.116), (1.590, 0, 0.0, 0.132, 0.132),
+                                 (1.640, 0, 0.004, 0.134, 0.134)],
+              "castano", centre, (0.22, 0.22, 0.2), 0.022, sides=3)
+    hull("moustache", [(0.034, -0.118, 1.546), (-0.034, -0.118, 1.546), (0.022, -0.131, 1.552),
+                       (-0.022, -0.131, 1.552), (0.0, -0.136, 1.556), (0.0, -0.124, 1.565),
+                       (0.03, -0.121, 1.539), (-0.03, -0.121, 1.539)], "castano")
+    box("mouth", (0.032, 0.006, 0.006), (0.0, -0.134, 1.532), "tinta")
+
+
+def _build_torso():
+    shell("jacket", JACKET, "salvia", math.pi / 2, [math.pi - g for g in JACKET_OPEN], 0.018,
+          sides=16, jitter=0.015)
+    shell("jacket_collar", [(1.395, 0, 0.010, 0.112, 0.088, 2.2), (1.440, 0, 0.012, 0.086, 0.073, 2.2),
+                            (1.485, 0, 0.014, 0.078, 0.068, 2.2)],
+          "salvia_oscura", math.pi / 2, (2.25, 2.3, 2.35), 0.014, sides=12)
+    patch("jacket_pocket", JACKET, -0.150, -0.080, 1.17, 1.24, 0.006, "salvia_oscura")
+    loft("shirt", SHIRT, "hueso", sides=12)
+    patch("shirt_print", SHIRT, -0.026, 0.026, 1.205, 1.255, 0.004, "grafito")
+    patch("shirt_print_cursor", SHIRT, -0.014, 0.004, 1.222, 1.230, 0.003, "mostaza", lift=0.004)
+    loft("jeans_hips", PELVIS, "vaquero", sides=12)
+    loft("belt", BELT, "cuero", sides=12)
+    patch("belt_buckle", BELT, -0.022, 0.022, 0.928, 0.962, 0.007, "acero")
+    loft("neck", [(1.40, 0, 0.010, 0.050, 0.047), (1.505, 0, 0.012, 0.046, 0.044)], "piel")
+    loft("head", HEAD, "piel", sides=12)
+
+
+def build_character_player():
+    """The player character (~1.78 m with hair): a homelab tinkerer in an open sage overshirt,
+    T-shirt with a terminal print, jeans and trainers, glasses and a short beard. Faceted low-poly in the game palette. Articulated exactly like the mannequin
+    (J_hip / J_knee / J_ankle, J_shoulder / J_elbow, suffix _L / _R) for CharacterAnimator."""
+    for sx, side in ((-1, "L"), (1, "R")):
+        x = sx * 0.085
+        hip = empty(f"J_hip_{side}", (x, 0, 0.84), size=0.05)
+        knee = empty(f"J_knee_{side}", (x, 0, 0.44), size=0.05)
+        ankle = empty(f"J_ankle_{side}", (x, 0, 0.07), size=0.05)
+        parent_keep(loft(f"thigh_{sx}", [(0.43, x, 0.000, 0.051, 0.055), (0.48, x, 0.000, 0.058, 0.062),
+                                         (0.62, x, -0.004, 0.068, 0.072),
+                                         (0.78, x + sx * 0.004, -0.004, 0.077, 0.080),
+                                         (0.90, x + sx * 0.004, 0.000, 0.074, 0.076)],
+                         "vaquero", jitter=0.03), hip)
+        parent_keep(ball(f"knee_{sx}", (x, 0, 0.44), 0.052, "vaquero"), knee)
+        parent_keep(loft(f"shin_{sx}", [(0.09, x, 0.000, 0.044, 0.047), (0.16, x, 0.000, 0.046, 0.049),
+                                        (0.27, x, 0.006, 0.049, 0.053), (0.37, x, 0.008, 0.054, 0.058),
+                                        (0.47, x, 0.000, 0.052, 0.055)], "vaquero", jitter=0.03), knee)
+        parent_keep(loft(f"hem_{sx}", [(0.105, x, 0, 0.052, 0.055), (0.125, x, 0, 0.056, 0.059),
+                                       (0.155, x, 0, 0.053, 0.056)], "vaquero_claro"), knee)
+        parent_keep(loft(f"shoe_{sx}", [(0.088, x, 0.050, 0.030, 0.030, 2.2), (0.070, x, 0.058, 0.047, 0.048, 2.2),
+                                        (0.020, x, 0.064, 0.054, 0.054, 2.2), (-0.040, x, 0.050, 0.056, 0.040, 2.2),
+                                        (-0.095, x, 0.040, 0.053, 0.030, 2.2), (-0.135, x, 0.034, 0.042, 0.022, 2.2),
+                                        (-0.150, x, 0.030, 0.020, 0.012, 2.2)], "grafito", axis="y", jitter=0.03),
+                    ankle)
+        parent_keep(loft(f"sole_{sx}", [(0.092, x, 0.011, 0.036, 0.011, 3.0), (0.075, x, 0.011, 0.052, 0.011, 3.5),
+                                        (-0.090, x, 0.011, 0.058, 0.011, 3.5), (-0.140, x, 0.012, 0.046, 0.011, 3.0),
+                                        (-0.156, x, 0.014, 0.024, 0.009, 2.5)], "hueso", axis="y", tones=False),
+                    ankle)
+        parent_keep(hull(f"laces_{sx}", [(x + 0.020, 0.000, 0.118), (x - 0.020, 0.000, 0.118),
+                                         (x + 0.016, -0.070, 0.086), (x - 0.016, -0.070, 0.086),
+                                         (x + 0.016, 0.000, 0.104), (x - 0.016, 0.000, 0.104),
+                                         (x + 0.012, -0.070, 0.074), (x - 0.012, -0.070, 0.074)],
+                         "hueso", tones=False), ankle)
+        parent_keep(ankle, knee)
+        parent_keep(knee, hip)
+
+        ax = sx * 0.265
+        shoulder = empty(f"J_shoulder_{side}", (ax, 0, 1.35), size=0.05)
+        elbow = empty(f"J_elbow_{side}", (ax, 0, 1.08), size=0.05)
+        parent_keep(loft(f"sleeve_{sx}", [(1.06, ax, 0.0, 0.047, 0.049), (1.12, ax, 0.0, 0.052, 0.054),
+                                          (1.25, ax, 0.0, 0.057, 0.059), (1.33, ax, 0.0, 0.059, 0.061),
+                                          (1.385, ax - sx * 0.012, 0.0, 0.050, 0.053),
+                                          (1.412, ax - sx * 0.028, 0.0, 0.0, 0.0)], "salvia", jitter=0.03),
+                    shoulder)
+        parent_keep(ball(f"elbow_{sx}", (ax, 0, 1.08), 0.049, "salvia"), elbow)
+        parent_keep(loft(f"forearm_{sx}", [(0.855, ax, 0.0, 0.048, 0.050), (0.90, ax, 0.0, 0.050, 0.052),
+                                           (1.00, ax, -0.004, 0.052, 0.054), (1.10, ax, 0.0, 0.049, 0.051)],
+                         "salvia", jitter=0.03), elbow)
+        parent_keep(loft(f"cuff_{sx}", [(0.835, ax, 0, 0.050, 0.052), (0.865, ax, 0, 0.055, 0.057),
+                                        (0.885, ax, 0, 0.053, 0.055)], "salvia_oscura"), elbow)
+        parent_keep(loft(f"wrist_{sx}", [(0.80, ax, 0, 0.028, 0.030), (0.85, ax, 0, 0.030, 0.032)], "piel"),
+                    elbow)
+        hx = sx * 0.268
+        hand = [(hx + dx, dy, 0.828) for dx in (-0.016, 0.016) for dy in (-0.028, 0.028)]
+        hand += [(hx + dx, dy, 0.790) for dx in (-0.021, 0.021) for dy in (-0.044, 0.044)]
+        hand += [(hx + dx, dy, 0.760) for dx in (-0.019, 0.019) for dy in (-0.042, 0.042)]
+        hand += [(hx + dx, dy, 0.733) for dx in (-0.012, 0.012) for dy in (-0.034, 0.034)]
+        hand += [(hx, -0.018, 0.722), (hx, 0.018, 0.722), (hx - sx * 0.016, -0.052, 0.800),
+                 (hx - sx * 0.022, -0.060, 0.772), (hx - sx * 0.010, -0.058, 0.765)]
+        parent_keep(hull(f"hand_{sx}", hand, "piel"), elbow)
+        parent_keep(elbow, shoulder)
+    _build_torso()
+    _build_face()
+    _build_hair()
+
+
 MODELS = {
     "switch_16p_1u": ("network", build_switch_16p_1u),
     "server_1u_entry": ("compute", build_server_1u_entry),
@@ -622,6 +990,7 @@ MODELS = {
     "package_box": ("props", build_package_box),
     "room_bedroom": ("rooms", build_room_bedroom),
     "mannequin_scale": ("characters", build_mannequin),
+    "character_player": ("characters", build_character_player),
 }
 
 

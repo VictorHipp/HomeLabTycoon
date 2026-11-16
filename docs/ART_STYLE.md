@@ -106,6 +106,24 @@ Valores sRGB de partida; se ajustarán en el spike visual (ROADMAP, Hito 1).
 - **Animaciones mínimas del prototipo:** reposo, caminar, interactuar de pie (rack), sentarse y teclear (PC), agacharse y abrir caja, llevar caja.
 - **Presupuesto:** jugador 4–6 k triángulos; NPC 3–5 k.
 
+### 6.1 Personaje del jugador provisional `[CONFIRMADO: 2026-11-16, modelado facetado pedido por el usuario]`
+
+El usuario pidió (2026-11-16) más modelado en el personaje, con el nivel de talla de una imagen de referencia facetada, pero con ropa y estilo del juego. Solo está confirmado ese **modelado facetado**. El rig estándar, el atlas de expresiones y los accesorios modulares de §6 siguen siendo `[PROPUESTA]`.
+
+- **Modelo:** `character_player` (`assets/models/characters/`), generado por `build_character_player` en `tools/blender/build_prototype_models.py`. Sustituye al maniquí en el juego (`PlayerCharacter.MODEL`).
+- **Aspecto:** cacharrero de homelab con sobrecamisa salvia abierta (cuello y puños más oscuros, bolsillo), camiseta hueso con un estampado de terminal, vaqueros apagados con el bajo vuelto, cinturón, zapatillas, gafas, barba corta y pelo tallado en mechones.
+- **Cómo se talla:**
+  - secciones de 8–16 lados a varias alturas, estrechadas y con algo de ruido fijo;
+  - prendas abiertas con grosor real;
+  - piezas convexas para nariz, orejas, manos y mechones;
+  - caras planas trianguladas, sin bisel;
+  - cada triángulo con uno de **tres tonos** de su color (100 %, 87 % y 109 %). Las caras se leen por el tono, como en la referencia. Las semillas son fijas, así que el `.glb` es reproducible.
+- **Colores nuevos de atrezo:** salvia oscura, vaquero, vaquero claro, cuero y castaño. No se usa ningún color funcional (LED, cables, resaltado).
+- **Mismas articulaciones que el maniquí:** `J_hip`, `J_knee`, `J_ankle`, `J_shoulder` y `J_elbow` (`_L` y `_R`), a las mismas alturas, para que `CharacterAnimator` y sus pruebas sigan valiendo. Cada pieza es rígida y cuelga de su articulación; rodillas y codos llevan una esfera de relleno para que no se abra un hueco al doblarse.
+- **La ropa sigue a las piezas rígidas:** la chaqueta acaba en la cadera y no hay nada largo, porque al sentarse los muslos giran 88°.
+- **Presupuesto:** 3598 triángulos, 76 piezas y 33 materiales.
+- **Comprobado:** con luz del juego, de pie, a media zancada y sentado ante la mesa, sin atravesar la mesa ni la silla.
+
 ## 7. Objetos y dispositivos
 
 **Reglas de legibilidad técnica:**
@@ -184,7 +202,7 @@ La escena envoltorio no cambia cuando llega el modelo definitivo: solo se sustit
 | Muebles | `desk_basic`, `chair_office`, `bed_single`, `cabinet_small`, `rug_basic` |
 | Equipos | `rack_12u_open`, `switch_16p_1u`, `server_1u_entry`, `router_home`, `power_strip_4`, `pc_tower_old`, `monitor_old`, `keyboard_mouse` |
 | Atrezo | `package_box` |
-| Escala | `mannequin_scale` |
+| Personajes | `character_player` (jugador, §6.1) y `mannequin_scale` (maniquí de escala, solo en la muestra) |
 
 - **Archivos:** cada uno exporta `assets/models/<categoría>/<id>.glb` y guarda su fuente editable `art_source/<categoría>/<id>.blend`, con los modificadores vivos.
 - **Muestra:** `game/showcase/model_showcase.tscn` los coloca en la habitación, con el switch en U9 y el servidor en U5 del rack. Capturas en `docs/images/showcase/`.
@@ -213,5 +231,5 @@ La escena envoltorio no cambia cuando llega el modelo definitivo: solo se sustit
 - **Sombras:** en habitaciones, la luz direccional necesita `directional_shadow_max_distance` ≈ 12 m. Con el valor por defecto aparece granulado.
 
 **Limitaciones:**
-- **El maniquí no es el personaje:** solo da la escala. Un personaje con el estilo de §6 exige modelado a mano en Blender, o recursos externos con licencia (decisión futura).
+- **El maniquí no es el personaje:** solo da la escala en la muestra. El jugador usa `character_player` (§6.1), que es provisional: un personaje definitivo con el rig y la cara de §6 exige modelado a mano en Blender, o recursos externos con licencia (decisión futura).
 - **LED fijos:** los LED tienen estados fijos en el modelo solo para la muestra. En el juego los controlará la simulación (*spike* S5).

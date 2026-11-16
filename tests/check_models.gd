@@ -16,6 +16,8 @@ const EXPECT := {
 	"power_strip_4": {"POWER_OUT_": 4},
 	"pc_tower_old": {"PORT_lan_": 1, "POWER_IN_": 1},
 	"monitor_old": {"SCREEN": 1, "CAM_screen": 1},
+	"character_player": {"J_": 10},
+	"mannequin_scale": {"J_": 10},
 }
 const SIZE_TOLERANCE := 0.003
 

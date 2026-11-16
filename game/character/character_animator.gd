@@ -1,6 +1,6 @@
 class_name CharacterAnimator
 extends RefCounted
-## Procedural animation of the articulated mannequin (tools/blender: J_hip_*, J_knee_*, J_ankle_*,
+## Procedural animation of the articulated character (tools/blender: J_hip_*, J_knee_*, J_ankle_*,
 ## J_shoulder_*, J_elbow_*). No AnimationPlayer: the walk is driven by the distance really
 ## travelled (measured after move_and_slide), so the legs stop when the body stops (blocked
 ## against something) and the feet keep pace with the ground at any speed.

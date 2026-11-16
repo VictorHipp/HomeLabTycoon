@@ -26,6 +26,7 @@ Simulador 3D de construcción y administración de infraestructura informática.
   - guardado v2.
 
   Si cambia un modelo de la tienda, regenera sus fotos con `tools\capture_shop_photos.ps1`.
+- **Personaje facetado (2026-11-16):** el jugador usa `character_player`, de modelado facetado con tres tonos por color y las mismas articulaciones que el maniquí (`docs/ART_STYLE.md` §6.1).
 - **Hito 1 (habitación, cámara y movimiento):** sus tareas 1–7 están hechas dentro de la prueba jugable.
   - **Hecho:** habitación, director de cámara, vista general con giro por ratón, corte automático de paredes, personaje con navegación y aviso de inalcanzable, iluminación y estilo aprobados, y `GameSession` con `SimWorld` y reloj.
   - **Pendiente para cerrarlo:**

@@ -3,14 +3,14 @@ extends CharacterBody3D
 ## The player's character (docs/CAMERA_SYSTEM.md §4): walks with NavigationAgent3D to the
 ## clicked point using move_and_slide (it collides with walls, furniture parts and devices),
 ## accelerates and slows down smoothly, and stops with a warning if something blocks it.
-## The articulated mannequin is animated procedurally from the distance really travelled
+## The articulated character model is animated procedurally from the distance really travelled
 ## (CharacterAnimator). It can sit on the swivel chair and stand up again.
 
 signal arrived
 signal unreachable
 signal blocked ## Stopped because it could not advance (something in the way).
 
-const MODEL := "res://assets/models/characters/mannequin_scale.glb"
+const MODEL := "res://assets/models/characters/character_player.glb"
 const SPEED := 1.4 ## m/s
 const ACCEL := 5.0 ## m/s²
 const SLOW_DOWN_DISTANCE := 0.35 ## starts braking this far from the destination
