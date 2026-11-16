@@ -18,6 +18,7 @@ const DEFAULTS := {
 	&"secondary": [[&"mouse", MOUSE_BUTTON_RIGHT]],
 	&"close_interaction": [[&"key", KEY_ESCAPE]],
 	&"rotate_object": [[&"key", KEY_R]],
+	&"open_manual": [[&"key", KEY_F1]],
 }
 
 

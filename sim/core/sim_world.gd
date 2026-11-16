@@ -139,6 +139,13 @@ func clock_text() -> String:
 	return tr("Día %d · %02d:%02d") % [total / 1440 + 1, (total / 60) % 24, total % 60]
 
 
+## Metres with the Spanish decimal comma (`3,1`).
+static func metres(value: float, decimals: int = 1) -> String:
+	if decimals <= 0:
+		return str(roundi(value))
+	return ("%.1f" % value).replace(".", ",")
+
+
 static func format_duration(minutes: float) -> String:
 	if minutes >= 60.0:
 		var h := int(minutes / 60.0)
@@ -410,7 +417,7 @@ func _cable_problem_if_placed(d: SimDevice, pos: Vector3, yaw_degrees: float) ->
 			problem = tr("Ahí cortaría el paso del cable %s: %s") % [name, route["reason"]]
 			break
 		if route["length"] > spec.length_m:
-			problem = tr("Con %s ahí, el cable %s no llegaría: harían falta unos %.1f m y mide %.0f m.") % [d.display_name(), name, route["length"], spec.length_m]
+			problem = tr("Con %s ahí, el cable %s no llegaría: harían falta unos %s m y mide %s m.") % [d.display_name(), name, metres(route["length"]), metres(spec.length_m, 0)]
 			break
 	d.location = saved[0]
 	d.position = saved[1]
@@ -859,7 +866,7 @@ func connect_cable(cable_id: int, port_ref: String) -> CommandResult:
 	if not route["ok"]:
 		return CommandResult.failure(tr("No se puede conectar: %s") % route["reason"])
 	if route["length"] > spec.length_m:
-		return CommandResult.failure(tr("El cable no llega: por el suelo hacen falta unos %.1f m y este mide %.0f m.") % [route["length"], spec.length_m])
+		return CommandResult.failure(tr("El cable no llega: por el suelo hacen falta unos %s m y este mide %s m.") % [metres(route["length"]), metres(spec.length_m, 0)])
 	ends["b"] = port_ref
 	port_cable[port_ref] = cable_id
 	_refresh()

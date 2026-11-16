@@ -5,6 +5,7 @@ extends CanvasLayer
 ## are forwarded through signals / callables to the session.
 
 signal inventory_item_pressed(device_id: int)
+signal menu_requested
 
 var world: SimWorld
 var _credits: Label
@@ -62,6 +63,7 @@ func setup(sim_world: SimWorld) -> void:
 		top_row.add_child(b)
 	_skip = UiStyle.button(TranslationServer.translate("Saltar espera"), _skip_wait)
 	top_row.add_child(_skip)
+	top_row.add_child(UiStyle.button(TranslationServer.translate("Menú (Esc)"), func() -> void: menu_requested.emit()))
 
 	# Top-right: mission.
 	var mission := PanelContainer.new()

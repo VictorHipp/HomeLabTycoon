@@ -7,7 +7,17 @@ Simulador 3D de construcción y administración de infraestructura informática.
 ## Estado actual
 
 - **Hito 0 (entorno) completado.**
-- **Prueba jugable de la primera misión: hecha** (2026-11-15; ver `docs/ROADMAP.md` §1). La escena principal es `game/main/main.tscn` → `GameSession` (`game/session/`). Tras cualquier cambio de presentación, ejecuta también `tools\walkthrough.ps1` (4 escenarios de colocación del rack, solo con entrada sintética real): debe terminar en `WALKTHROUGH CHECK PASSED`.
+- **Prueba jugable de la primera misión: hecha** (2026-11-15; ver `docs/ROADMAP.md` §1). La escena principal es `game/main/main.tscn` → `GameSession` (`game/session/`). Tras cualquier cambio de presentación, ejecuta también `tools\walkthrough.ps1` (4 escenarios, solo con entrada sintética real): debe terminar en `WALKTHROUGH CHECK PASSED`.
+- **Segunda ronda de mejoras (2026-11-15):**
+  - menú con Ajustes › Controles;
+  - manual con capturas;
+  - guardar y cargar;
+  - zona de entregas con pila «×N»;
+  - cables tendidos por el suelo;
+  - colisiones por piezas;
+  - personaje articulado que camina sin deslizar y se sienta en la silla.
+
+  Detalle en ROADMAP §1. Si cambia la interfaz, regenera las capturas del manual con `tools\walkthrough.ps1 -Scenario manual` y reimporta.
 - **Hito 1 (habitación, cámara y movimiento):** sus tareas 1–7 están hechas dentro de la prueba jugable.
   - **Hecho:** habitación, director de cámara, vista general con giro por ratón, corte automático de paredes, personaje con navegación y aviso de inalcanzable, iluminación y estilo aprobados, y `GameSession` con `SimWorld` y reloj.
   - **Pendiente para cerrarlo:**
@@ -16,13 +26,14 @@ Simulador 3D de construcción y administración de infraestructura informática.
     - opinión del usuario sobre la sensación de la cámara (*spike* S1);
     - coste de rehornear la navegación (S3).
 - **Deuda declarada:**
-  - **Decisión 20 sin cumplir:** `sim/` aún no tiene `save_state` / `load_state` ni guardado.
+  - **Guardado (decisión 20):** cumplida para lo que existe; los sistemas futuros (archivos simulados, servicios…) deben nacer con su `save_state` / `load_state`.
   - **Terminal:** los textos de error de la terminal están `[POR VERIFICAR]`, no emulan el idioma del sistema simulado y no usan claves de traducción.
+  - **Manual del juego y cuaderno:** son cosas distintas. Existe el manual (cómo jugar, `data/manual/es/`); el cuaderno técnico del Hito 7 (H7-03) sigue sin hacer.
 - **Código existente:**
-  - `sim/`: simulación pura (mundo, catálogo, red, terminal y misiones);
-  - `data/`: catálogo y misión;
+  - `sim/`: simulación pura (mundo, catálogo, red, cables, terminal, misiones y guardado);
+  - `data/`: catálogo, misión y manual;
   - `game/`: presentación;
-  - `tests/`: 37 pruebas sin ventana, *smoke test* y comprobación de modelos;
+  - `tests/`: 56 pruebas sin ventana, *smoke test* y comprobación de modelos;
   - `tools/`: scripts.
 
   Detalle en `docs/ARCHITECTURE.md` y en ROADMAP §1.

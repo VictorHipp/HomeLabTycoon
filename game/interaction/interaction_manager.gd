@@ -58,6 +58,7 @@ func setup(game: GameSession) -> void:
 	session.screen.closed.connect(leave)
 	session.character.arrived.connect(_on_arrived)
 	session.character.unreachable.connect(_on_unreachable)
+	session.character.blocked.connect(_on_blocked)
 	session.hud.set_hint(TranslationServer.translate(HINT_OVERVIEW))
 	_update_tool_text()
 
@@ -67,11 +68,12 @@ func setup(game: GameSession) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	var button := event as InputEventMouseButton
 	var motion := event as InputEventMouseMotion
+	var start_mode := mode # Esc that cancels a placement must not also open the menu
 	match mode:
 		Mode.OVERVIEW, Mode.APPROACH:
-			if button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			if button != null and button.pressed and event.is_action(&"interact"):
 				_click_world(button.position)
-			elif button != null and button.button_index == MOUSE_BUTTON_RIGHT:
+			elif button != null and event.is_action(&"secondary"):
 				# Right button: dragging turns the camera (OverviewCameraRig); a click without
 				# dragging acts on the object under the cursor. Works whichever node sees the
 				# release first: after a drag the rig either still reports it or consumes it.
@@ -88,9 +90,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		Mode.CLOSEUP:
 			if motion != null:
 				_hover_closeup(motion.position)
-			elif button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			elif button != null and button.pressed and event.is_action(&"interact"):
 				_click_closeup(button.position)
-			elif button != null and button.pressed and button.button_index == MOUSE_BUTTON_RIGHT:
+			elif button != null and button.pressed and event.is_action(&"secondary"):
 				_right_click_closeup(button.position)
 			elif event.is_action_pressed(&"close_interaction"):
 				if _mount_device >= 0:
@@ -102,9 +104,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		Mode.PLACEMENT:
 			if motion != null:
 				_move_ghost(motion.position)
-			elif button != null and button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
+			elif button != null and button.pressed and event.is_action(&"interact"):
 				_confirm_placement()
-			elif button != null and button.button_index == MOUSE_BUTTON_RIGHT:
+			elif button != null and event.is_action(&"secondary"):
 				# Same rule as in the overview: dragging turns the camera, a click cancels.
 				if button.pressed:
 					_right_down = true
@@ -118,9 +120,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.is_action_pressed(&"rotate_object"):
 				_ghost_yaw = fposmod(_ghost_yaw + 90.0, 360.0)
 				_update_ghost()
-	if mode in [Mode.OVERVIEW, Mode.APPROACH] and event.is_action_pressed(&"close_interaction") and selected_cable >= 0:
-		selected_cable = -1
-		_update_tool_text()
+	if start_mode in [Mode.OVERVIEW, Mode.APPROACH] and event.is_action_pressed(&"close_interaction"):
+		get_viewport().set_input_as_handled()
+		if selected_cable >= 0:
+			selected_cable = -1 # first Esc drops the chosen cable
+			_update_tool_text()
+		else:
+			session.menu.open()
 
 
 ## Raycast from the camera. With `areas` (ports, rack units) an area only counts when no
@@ -193,9 +199,8 @@ func start_move(device_id: int) -> void:
 	var d := session.world.get_device(device_id)
 	if d == null or d.location != &"placed":
 		return
-	if session.world.has_cables_inside(d):
-		session.hud.show_toast(TranslationServer.translate("Desconecta antes los cables de %s para moverlo (en su vista cercana: «Desconectar todos los cables»).") % d.display_name(), false)
-		return
+	# Its cables stay plugged: the simulation re-routes them at the new spot (or refuses the spot
+	# with the reason). While the ghost moves, the old cable drawing is hidden.
 	_start_placement(d, true)
 
 
@@ -204,8 +209,27 @@ func _begin(kind: StringName, target_id: int) -> void:
 	_target_id = target_id
 	_approach_token += 1
 	mode = Mode.APPROACH
-	if not session.character.move_to(session.stand_point(kind, target_id)):
+	var destination := session.stand_point(kind, target_id)
+	if kind == &"computer":
+		# Sit at the desk: walk to the nearest reachable side of the chair (left, right, behind).
+		destination = Vector3.INF
+		var best := INF
+		for spot: Vector3 in session.chair_spots():
+			var length := session.character.path_length_to(spot)
+			if length < best:
+				best = length
+				destination = spot
+		if destination == Vector3.INF:
+			mode = Mode.OVERVIEW
+			session.hud.show_toast(TranslationServer.translate("No puedo llegar a la silla del escritorio: algo bloquea el acceso por los lados y por detrás."), false)
+			return
+	if not session.character.move_to(destination):
 		mode = Mode.OVERVIEW
+
+
+func _on_blocked() -> void:
+	mode = Mode.OVERVIEW
+	session.hud.show_toast(TranslationServer.translate("Algo me bloquea el paso: me he detenido."), false)
 
 
 func _on_unreachable() -> void:
@@ -238,7 +262,7 @@ func _on_arrived() -> void:
 			session.hud.show_toast(text, r.ok)
 			mode = Mode.OVERVIEW
 		&"computer":
-			_focus(session.screen_anchor(), Mode.SCREEN)
+			_sit_and_use_computer()
 		&"rack":
 			_closeup_device = _target_id
 			_rack_rear = false
@@ -246,6 +270,14 @@ func _on_arrived() -> void:
 		&"device":
 			_closeup_device = _target_id
 			_focus(session.device_anchor(_target_id), Mode.CLOSEUP)
+
+
+## The character sits on the chair (it turns, sits, the chair turns back to the desk) and then
+## the camera goes to the screen. Input waits in TRANSITION meanwhile.
+func _sit_and_use_computer() -> void:
+	mode = Mode.TRANSITION
+	await session.character.sit_down(session.room.chair, deg_to_rad(RoomView.CHAIR_REST_YAW))
+	_focus(session.screen_anchor(), Mode.SCREEN)
 
 
 func _focus(anchor: Transform3D, final_mode: Mode) -> void:
@@ -278,7 +310,15 @@ func leave() -> void:
 	_approach_token += 1
 	mode = Mode.TRANSITION
 	session.director.return_to_overview()
+	var character := session.character
+	if character.seated:
+		# Stands up while the camera flies back (both always finish: they have time limits).
+		character.stand_up(session.room.chair, session.chair_spots(), deg_to_rad(RoomView.CHAIR_REST_YAW))
 	await session.director.transition_finished
+	var waited := 0.0
+	while (character.busy or character.seated) and waited < PlayerCharacter.TRANSITION_TIMEOUT:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
 	if mode == Mode.TRANSITION:
 		mode = Mode.OVERVIEW
 	_update_tool_text()
@@ -398,9 +438,6 @@ func _disconnect_all(rack_id: int) -> void:
 
 
 func _move_from_closeup(rack_id: int) -> void:
-	if session.world.has_cables_inside(session.world.get_device(rack_id)):
-		session.hud.show_toast(TranslationServer.translate("Desconecta antes los cables del rack para moverlo."), false)
-		return
 	_pending_move = rack_id
 	leave()
 
@@ -551,10 +588,26 @@ func _start_placement(d: SimDevice, moving: bool = false) -> void:
 			if view != null:
 				view.visible = false
 				_hidden_views.append(view)
+		if session.world.has_cables_inside(d):
+			session.cables.visible = false # re-drawn along the new routes once it is placed
+			_hidden_views.append(session.cables)
 	mode = Mode.PLACEMENT
 	session.hud.set_hint(TranslationServer.translate(HINT_PLACEMENT))
 	_update_ghost()
 	_move_ghost(session.get_viewport().get_mouse_position())
+
+
+var _overlays: Dictionary = {}
+
+
+func _ghost_overlay(valid: bool) -> StandardMaterial3D:
+	if not _overlays.has(valid):
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(UiStyle.OK, 0.28) if valid else Color(UiStyle.BAD, 0.5)
+		_overlays[valid] = mat
+	return _overlays[valid]
 
 
 ## Floor marks of the space a rack needs in front (bright) and behind (faint).
@@ -594,6 +647,10 @@ func _update_ghost() -> void:
 	_ghost.rotation_degrees.y = _ghost_yaw
 	var problem := _placement_problem()
 	var text: String = TranslationServer.translate("✓ Cabe aquí: clic para colocar") if problem == "" else "✗ " + problem
+	# The ghost itself turns green or red, so an invalid spot is obvious before reading the text.
+	var overlay := _ghost_overlay(problem == "")
+	for mesh: MeshInstance3D in ModelUtil.find_meshes_with_prefix(_ghost, ""):
+		mesh.material_overlay = overlay
 	if not _zone_meshes.is_empty():
 		var color: Color = UiStyle.OK if problem == "" else UiStyle.BAD
 		for i: int in _zone_meshes.size():
@@ -604,9 +661,9 @@ func _update_ghost() -> void:
 			if not power.is_empty() and power["needed"] == INF:
 				text += "\n" + TranslationServer.translate("⚠ Desde aquí no hay por dónde llevar un cable de corriente hasta la regleta.")
 			elif not power.is_empty() and power["needed"] > power["longest"]:
-				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %.1f m de cable de corriente y el más largo de la tienda mide %.0f m.") % [power["needed"], power["longest"]]
+				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %s m de cable de corriente y el más largo de la tienda mide %s m.") % [SimWorld.metres(power["needed"]), SimWorld.metres(power["longest"], 0)]
 			elif not power.is_empty() and power["needed"] > power["included"]:
-				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %.1f m de cable de corriente; el que traen mide %.0f m (en la tienda hay de %.0f m).") % [power["needed"], power["included"], power["longest"]]
+				text += "\n" + TranslationServer.translate("⚠ Lejos de la regleta: los equipos del rack necesitarían unos %s m de cable de corriente; el que traen mide %s m (en la tienda hay de %s m).") % [SimWorld.metres(power["needed"]), SimWorld.metres(power["included"], 0), SimWorld.metres(power["longest"], 0)]
 	session.hud.set_tool_text(text)
 
 

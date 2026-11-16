@@ -87,6 +87,17 @@ Mecanismo en el Hito 2; funcionalidad completa en el Hito 4.
 - **Recoger:** los objetos pasan al inventario. La caja vacía se puede retirar.
 - **Repetición sin fatiga:** la animación completa solo la primera vez por tipo de producto. Después es más rápida, y existe «abrir todo» `[CONFIRMADO: no repetir animaciones largas]`. En etapas avanzadas, la recepción se automatiza.
 
+### 7.1. Implementado (2026-11-15): zona de entregas
+
+- **Zona reservada:** un rectángulo de 0,60 × 0,50 m junto a la puerta (`BedroomScenario.DELIVERY_ZONE`), marcado en el suelo con «ENTREGAS» y libre del paso y del giro de la puerta.
+- **Qué impide la reserva:** colocar algo encima, que la zona de trabajo de un rack la pise y que la crucen cables.
+- **Una sola pila:** todas las cajas que esperan, de cualquier pedido, van en la misma pila. Se dibujan hasta tres y un contador «×N» indica las reales.
+- **Contenido:** cada caja conserva el suyo en la simulación.
+- **Abrir:** un clic en la pila abre la de arriba; el contador baja y, sin cajas, la pila desaparece. La apertura animada y «abrir todo» siguen pendientes.
+- **Partida antigua con la zona ocupada:** al cargar no se borra nada. La pila se pone en el sitio libre más cercano y un mensaje lo indica (`SimWorld.delivery_spot`).
+- **Si llega un pedido con el personaje encima de la zona:** el personaje se aparta al suelo transitable más cercano.
+- **Comprobado** en `tests/integration/test_deliveries.gd` y en el recorrido: varios pedidos seguidos en `wall` y el contador en cada caja.
+
 ## 8. Colocación de objetos (Hito 3) `[PROPUESTA]`
 
 - **Activación:** desde el inventario («Colocar») o desde un objeto ya colocado («Mover»).
@@ -119,7 +130,9 @@ Mecanismo en el Hito 2; funcionalidad completa en el Hito 4.
   - con clic derecho sobre un rack colocado, en la vista general. No hace falta caminar hasta él, así que un rack que cierra el paso siempre se puede mover;
   - o con el botón «Mover rack» del panel del rack.
 
-  Se mueve con lo que tenga montado. Antes hay que desconectar sus cables: lo indica el mensaje, y existe el botón «Desconectar todos los cables».
+  Se mueve con lo que tenga montado y **con sus cables**: la simulación los vuelve a tender en el sitio nuevo. Si alguno ya no tuviera recorrido o no llegara, el sitio se rechaza con el nombre del cable y los metros (§9). También existe el botón «Desconectar todos los cables».
+- **Colocar algo sobre un cable tendido:** el cable se vuelve a tender rodeándolo. Si no puede, se rechaza el sitio con el motivo.
+- **Fantasma:** se tiñe de verde o de rojo además del mensaje, y el clic en un sitio rojo no hace nada.
 - **Recoger:** botón «Recoger rack». Solo si está vacío y sin cables; vuelve al inventario.
 - **Inaccesible:** si el rack deja algo fuera de alcance, no se avisa al colocarlo (pendiente). Al intentar ir allí, el personaje responde: «No puedo llegar ahí. Si el rack cierra el paso, muévelo con clic derecho sobre él».
 
@@ -140,7 +153,43 @@ Las reglas (compatibilidad, longitud, velocidad, estado del enlace) son de la si
    - si está en otro equipo, el jugador sale (el cable queda colgando con el extremo libre, como en la realidad), se acerca al otro equipo y conecta el extremo B.
 6. **Resultado:** `ConnectCable` devuelve el estado. El LED del puerto y el panel de estado del enlace se actualizan («Enlace: 1 Gbps» o «Sin enlace: el otro equipo no tiene alimentación»).
 7. **Desconectar:** clic en el conector → «Desconectar» (o arrastrarlo a otro puerto). Los cables se pueden retirar al inventario.
-8. **Longitud:** se calcula a lo largo del recorrido, con distancia entre tomas × factor de recorrido (≈ 1,2) más holgura. Si el cable no llega, se rechaza con el motivo y la longitud necesaria. Bandejas y guías vendrán después.
+8. **Longitud:** se calcula a lo largo del recorrido real (§9.1). Si el cable no llega, se rechaza con el motivo y la longitud necesaria. Bandejas y guías vendrán después.
+
+### 9.1. Implementado (2026-11-15): recorrido por el suelo
+
+**Dónde se calcula:** en la simulación, en `sim/cabling/cable_router.gd` y `SimWorld.route_between`. La vista solo lo dibuja (`game/cabling/cable_renderer.gd`).
+
+**Cada extremo:**
+- sale de la toma por la cara que indican los datos (`PortDefinition.face`: `front`, `rear` o `top`, contrastada con los marcadores de los modelos);
+- baja al suelo junto a su equipo;
+- en un rack, baja por el poste de esa cara más cercano al destino;
+- un equipo sobre un mueble, como el router, lleva el cable por encima hasta el borde y lo baja por delante.
+
+**Por el suelo:**
+- Camino más corto en una rejilla de 2,5 cm (`AStarGrid2D` de Godot), tensado después para que abrace las esquinas.
+- Rodea, con 1,2 cm de margen: la cama, las patas y la cajonera del escritorio, el mueble del router, la base de la silla, los equipos de suelo y la zona de entregas. Pasa bajo el escritorio, entre sus patas.
+
+**Entre dos equipos del mismo rack:**
+- misma cara: el cable va por delante;
+- de delante a atrás: cruza por una U libre entre ellos;
+- si no hay ninguna U libre: rodea el lateral del rack.
+
+**Longitud necesaria:** salida de la toma (4 cm) + bajada al suelo + recorrido + subida + 20 cm de holgura (10 cm dentro de un rack).
+
+**Consecuencias:**
+- **Cables iniciales:** el cable de red del PC al router y el de corriente del router son de 5 m. Se añadió `power_cord_5m` al catálogo.
+- **Misión:** desde un rack en medio de la habitación, el enlace al router suele pedir el cable de 5 m.
+
+**Sin recorrido:** si no existe ninguno, la conexión se rechaza y se explica.
+
+**Dibujo:**
+- Tubo con esquinas redondeadas y marcos sin torsión.
+- Más grueso que un cable real (8–9,5 mm de radio) para que se vea en la vista general.
+- Se redibuja en cada cambio (mover, desconectar, recoger, cargar).
+
+**Comprobado:**
+- un barrido de posiciones del rack por los cuatro giros: ningún cable cruza nada (`tests/integration/test_rack_placement.gd`);
+- en el recorrido, cada punto de cada cable dibujado se consulta contra los colisionadores físicos y no puede estar dentro de un sólido ajeno.
 
 **Representación visual `[SPIKE]` S4:**
 - Cada cable es una malla de tubo generada a partir de una `Curve3D` con caída (catenaria aproximada), con pocos lados (6) y segmentos según la longitud.

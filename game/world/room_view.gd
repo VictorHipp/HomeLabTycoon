@@ -17,8 +17,11 @@ const FURNITURE := [
 	["res://assets/models/furniture/rug_basic.glb", Vector3(0.25, 0.0, 0.35), 0.0, false],
 ]
 const CUT_THRESHOLD := 0.25
+const CHAIR_MODEL := "res://assets/models/furniture/chair_office.glb"
+const CHAIR_REST_YAW := 180.0 ## The chair faces the desk.
 
 var nav_region: NavigationRegion3D
+var chair: Node3D ## The swivel chair at the desk (turns when the character sits down).
 var objects: Node3D ## Parent for device and package views (inside the navigation region).
 var _walls: Array[Dictionary] = [] ## {"full": Node3D, "cut": Node3D, "normal": Vector3}
 var _bake_pending: bool = false
@@ -62,6 +65,8 @@ func build() -> void:
 		piece.position = spec[1]
 		piece.rotation_degrees.y = spec[2]
 		nav_region.add_child(piece)
+		if spec[0] == CHAIR_MODEL:
+			chair = piece
 		if spec[3]:
 			ModelUtil.add_part_bodies(piece, Layers.FURNITURE) # solid parts (character, cables, clicks)
 			ModelUtil.add_box_body(piece, ModelUtil.local_aabb(piece), Layers.NAV_BLOCK) # navigation only

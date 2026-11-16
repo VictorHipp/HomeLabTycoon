@@ -11,11 +11,21 @@ extends Node
 ##   wall     — first against the wall: rejected with the reason; turned 90°: accepted.
 ##   far      — far from the power strip: placement warns, the power cable does not reach,
 ##              the loose end is unplugged with a right click and the rack is moved.
-##   blocking — closes the way to the computer: "cannot get there", right click moves the rack.
+##   blocking — closes a corner of the room: "cannot get there", right click moves the rack;
+##              then the three ways to the desk chair are blocked: "cannot reach the chair".
+##   manual   — the basic game, taking the annotated screenshots of the in-game manual
+##              (res://assets/manual/*.png).
+## Also checked: camera drags, menu (Controls, manual, save / load, also while seated), sitting
+## and standing up repeatedly, walking through narrow spaces, the planted foot not sliding,
+## deliveries in several orders, invalid placements, every drawn cable against the colliders.
 ## Every scenario must end with the mission completed.
 
 const STEP_TIMEOUT := 25.0
-const SCENARIOS: Array[String] = ["basic", "wall", "far", "blocking"]
+const SCENARIOS: Array[String] = ["basic", "wall", "far", "blocking", "manual"]
+const MANUAL_DIR := "res://assets/manual"
+const MANUAL_SIZE := Vector2i(1280, 720)
+const MARK := Color("#3CC8D8")
+const POCKET := Vector3(-0.35, 0.0, -0.56) ## Floor in front of the PC tower, closed by BLOCK_SPOT.
 const GOOD_SPOT := Vector3(0.9, 0.0, 0.5)
 const GOOD_YAW := 90.0 ## Rear (power sockets) towards the room: the 3 m cords reach the strip.
 const WALL_SPOT := Vector3(1.2, 0.0, 0.5)
@@ -82,6 +92,7 @@ func _run() -> void:
 	_note("Escenario: " + scenario)
 	await _frames(90)
 	await _shot("inicio")
+	await _manual("01_vista_general", [_hud_rect(s.hud._credits), _hud_rect(s.hud._mission_title), _hud_rect(s.hud._inventory_row)])
 	await _steps()
 	_finish()
 
@@ -89,12 +100,16 @@ func _run() -> void:
 func _steps() -> void:
 	if not await _camera_and_walk():
 		return
+	if not await _menu_controls_and_manual():
+		return
 	if not await _shop():
 		return
 	if not await _unpack():
 		return
 	var rack := await _place_rack()
 	if rack == null:
+		return
+	if scenario == "basic" and not await _narrow_walks():
 		return
 	if not await _mount(rack):
 		return
@@ -112,8 +127,17 @@ func _steps() -> void:
 	if not await _ping_from_pc():
 		return
 	await _shot("final")
-	if scenario == "wall":
-		await _epilogue_pick_up(rack)
+	await _manual("17_cables_suelo")
+	match scenario:
+		"wall":
+			await _epilogue_pick_up(rack)
+		"basic":
+			if await _sit_stand_repeatedly(3):
+				await _save_and_load(rack.id)
+		"blocking":
+			await _chair_blocked()
+		"manual":
+			await _manual_epilogue()
 
 
 ## wall, after the mission: the panel buttons that undo everything (the mission stays completed).
@@ -162,21 +186,46 @@ func _camera_and_walk() -> bool:
 		_fail("el arrastre cambió el modo de interacción a %d" % s.interaction.mode)
 	await _frames(30)
 	await _shot("camara_girada")
+	await _manual("03_camara", [_hud_rect(s.hud._hint)])
 	var toast_before := s.hud._toast.text
 	await _click_screen(s.camera.unproject_position(Vector3(0.6, 0.0, 0.9)), MOUSE_BUTTON_RIGHT)
 	if s.interaction.mode != InteractionManager.Mode.OVERVIEW or s.hud._toast.text != toast_before:
 		_fail("un clic derecho en el suelo hizo algo")
-	var target := Vector3(0.6, 0.0, 0.9)
+	# A long straight walk: the foot on the floor must not slide (measured on the real model).
+	var target := Vector3(-1.2, 0.0, 0.85)
 	var start := s.character.global_position
 	await _click_point(target)
 	if not s.character.moving:
 		_fail("tras girar la cámara, el clic izquierdo no hizo caminar al personaje")
 		return false
-	await _wait(func() -> bool: return not s.character.moving)
+	var anim := s.character.animator
+	var drift := 0.0
+	var planted := {}
+	var shot_taken := false
+	var waited := 0.0
+	while s.character.moving and waited < STEP_TIMEOUT:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+		if not shot_taken and waited > 0.6:
+			shot_taken = true
+			await _manual("02_caminar", [], [s.camera.unproject_position(target), s.camera.unproject_position(s.character.global_position + Vector3(0, 0.9, 0))])
+		if anim.walk_weight < 0.99:
+			planted.clear()
+			continue
+		for side: String in ["L", "R"]:
+			var p := anim.foot_position(side)
+			if anim.in_stance(side):
+				if not planted.has(side):
+					planted[side] = p
+				drift = maxf(drift, Vector2(p.x - (planted[side] as Vector3).x, p.z - (planted[side] as Vector3).z).length())
+			else:
+				planted.erase(side)
 	var end := s.character.global_position
-	_note("  el personaje caminó de %s a %s" % [_v(start), _v(end)])
+	_note("  el personaje caminó de %s a %s · el pie apoyado se desplazó como máximo %.1f cm" % [_v(start), _v(end), drift * 100.0])
 	if Vector2(end.x - target.x, end.z - target.z).length() > 0.25:
 		_fail("el personaje no llegó al punto pulsado")
+	if drift > 0.04:
+		_fail("el pie apoyado se desliza %.1f cm" % (drift * 100.0))
 	yaw0 = s.rig.target_yaw_deg
 	await _drag(centre, Vector2(-120.0, -30.0), MOUSE_BUTTON_MIDDLE)
 	_note("  arrastre con el botón central: giro %+.1f°" % (s.rig.target_yaw_deg - yaw0))
@@ -187,36 +236,73 @@ func _camera_and_walk() -> bool:
 
 
 func _shop() -> bool:
-	_note("1. Ordenador y tienda (botones reales)")
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0))
+	_note("1. Sentarse al ordenador y comprar (botones reales)")
+	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	if not await _wait(func() -> bool: return s.character.seated, 20.0):
+		_fail("el personaje no se sentó en la silla (modo %d, mensaje «%s»)" % [s.interaction.mode, s.hud._toast.text])
+		return false
+	await _manual("05_sentado", [], [s.camera.unproject_position(s.room.chair.global_position + Vector3(0, 0.8, 0))])
 	if not await _wait_mode(InteractionManager.Mode.SCREEN):
 		return false
 	await _frames(10)
 	await _shot("escritorio")
-	for item: StringName in SHOPPING:
-		var def := s.world.catalog.get_item(item)
-		if not await _press(_shop_add_button(def.display_name()), "Añadir " + def.display_name()):
+	# wall: two orders in a row (several deliveries); manual: one cable more for its last pictures.
+	var orders: Array = [SHOPPING]
+	if scenario == "wall":
+		orders = [[&"rack_12u_open", &"switch_16p_1u"], [&"server_1u_entry", &"cable_cat6_1m", &"cable_cat6_5m"]]
+	elif scenario == "manual":
+		var more: Array[StringName] = SHOPPING.duplicate()
+		more.append(&"cable_cat6_1m")
+		orders = [more]
+	for order: Array in orders:
+		for item: StringName in order:
+			var def := s.world.catalog.get_item(item)
+			if not await _press(_shop_add_button(def.display_name()), "Añadir " + def.display_name()):
+				return false
+			await _frames(3)
+		await _shot("tienda_carrito")
+		await _manual("06_tienda", [_rect_of(_shop_add_button(s.world.catalog.get_item(&"rack_12u_open").display_name())), _rect_of(_find_button(s.screen, "Comprar"))])
+		if not await _press(_find_button(s.screen, "Comprar"), "Comprar"):
 			return false
-		await _frames(3)
-	await _shot("tienda_carrito")
-	if not await _press(_find_button(s.screen, "Comprar"), "Comprar"):
-		return false
-	_note("  compra: " + s.screen._message.text)
-	if s.world.orders.is_empty():
-		_fail("no se hizo el pedido")
+		_note("  compra: " + s.screen._message.text)
+	if s.world.orders.size() != orders.size():
+		_fail("se esperaban %d pedidos y hay %d" % [orders.size(), s.world.orders.size()])
 		return false
 	if not await _press(_find_button(s.screen, "Pedidos"), "Pedidos"):
 		return false
 	await _shot("pedidos")
-	if not await _press(_find_button(s.screen, "Esperar hasta la entrega"), "Esperar hasta la entrega"):
-		return false
+	await _manual("07_pedidos", [_rect_of(_find_button(s.screen, "Esperar hasta la entrega"))])
+	await _manual("08_levantarse", [_rect_of(_find_button(s.screen, "Menú")), _rect_of(_find_button(s.screen, "Levantarse (Esc)"))])
+	# One press per delivery still on its way.
+	while _find_button(s.screen, "Esperar hasta la entrega") != null:
+		if not await _press(_find_button(s.screen, "Esperar hasta la entrega"), "Esperar hasta la entrega"):
+			return false
+		await _frames(3)
 	if not await _press(_find_button(s.screen, "Levantarse (Esc)"), "Levantarse (Esc)"):
 		return false
 	if not await _wait_mode(InteractionManager.Mode.OVERVIEW):
 		return false
+	_check_standing("tras levantarse del ordenador")
 	await _frames(20)
 	await _shot("paquetes_entregados")
+	await _manual("09_pila_entregas", [], [s.camera.unproject_position(s.package_stack.global_position + Vector3(0, 0.5, 0))])
 	return true
+
+
+## After standing up: free, on the floor, collision back on, chair back facing the desk.
+func _check_standing(label: String) -> void:
+	var c := s.character
+	if c.seated or c.busy:
+		_fail("%s: el personaje sigue sentado" % label)
+	if c._shape.disabled:
+		_fail("%s: la colisión del personaje sigue desactivada" % label)
+	if not c.capsule_fits(c.global_position):
+		_fail("%s: el personaje queda dentro de algo en %s" % [label, _v(c.global_position)])
+	var closest := NavigationServer3D.map_get_closest_point(s.get_world_3d().navigation_map, c.global_position)
+	if Vector2(closest.x - c.global_position.x, closest.z - c.global_position.z).length() > 0.12:
+		_fail("%s: el personaje queda fuera del suelo transitable en %s" % [label, _v(c.global_position)])
+	if absf(angle_difference(s.room.chair.rotation.y, deg_to_rad(RoomView.CHAIR_REST_YAW))) > 0.03:
+		_fail("%s: la silla no volvió a mirar al escritorio" % label)
 
 
 func _unpack() -> bool:
@@ -230,7 +316,7 @@ func _unpack() -> bool:
 		var p := s.package_stack.global_position
 		if not stack_rect.has_point(Vector2(p.x, p.z)):
 			_fail("la pila no está en la zona de entregas: %s" % _v(p))
-		await _click_point(s.target_center(&"package", -1))
+		await _click_point(s.target_center(&"package", -1), MOUSE_BUTTON_LEFT, _is_package_stack)
 		if not await _wait(func() -> bool: return s.world.packages.size() < expected):
 			_fail("no se abrió ninguna caja (modo %d, mensaje «%s»)" % [s.interaction.mode, s.hud._toast.text])
 			return false
@@ -240,6 +326,7 @@ func _unpack() -> bool:
 	if s.package_stack.visible:
 		_fail("la pila sigue visible sin cajas")
 	await _shot("inventario")
+	await _manual("10_inventario", [_hud_rect(s.hud._inventory_row)])
 	return true
 
 
@@ -262,7 +349,13 @@ func _place_rack() -> SimDevice:
 			await _drag(centre, Vector2(-90.0, 0.0), MOUSE_BUTTON_RIGHT)
 			await _frames(30)
 			await _place_at(rack, GOOD_SPOT, GOOD_YAW, "colocando_rack")
+		"manual":
+			await _invalid_spot(rack, Vector3(-0.45, 0.0, 0.8), 0.0, "reservada para las entregas", "12_colocar_invalido")
+			await _place_at(rack, GOOD_SPOT, GOOD_YAW, "colocando_rack", "11_colocar_valido")
 		"wall":
+			_note("  posiciones no válidas: sobre la zona de entregas y sobre la cama")
+			await _invalid_spot(rack, Vector3(-0.45, 0.0, 0.8), 0.0, "reservada para las entregas")
+			await _invalid_spot(rack, Vector3(-1.2, 0.0, -0.4), 0.0, "mueble")
 			_note("  contra la pared: el frente mira a la pared derecha")
 			await _place_at(rack, WALL_SPOT, 90.0, "rechazo_pared")
 			if rack.location == &"placed":
@@ -287,17 +380,18 @@ func _place_rack() -> SimDevice:
 	return rack
 
 
-## blocking: the rack closes the way to the computer; a right click on it moves it (no walking).
+## blocking: the rack closes the corner in front of the PC tower; a right click on the rack
+## moves it (no need to walk to it).
 func _blocked_then_move(rack: SimDevice) -> bool:
-	_note("3b. El rack cierra el paso al ordenador")
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0))
+	_note("3b. El rack cierra el paso al rincón delante del PC")
+	await _click_point(POCKET)
 	await _frames(10)
 	if s.interaction.mode != InteractionManager.Mode.OVERVIEW or not s.hud._toast.text.contains("No puedo llegar"):
 		_fail("el rack no bloqueó el paso (modo %d, mensaje «%s»)" % [s.interaction.mode, s.hud._toast.text])
 		return false
 	await _shot("paso_bloqueado")
 	_note("3c. Clic derecho en el rack: moverlo sin caminar")
-	await _click_point(s.target_center(&"rack", rack.id), MOUSE_BUTTON_RIGHT)
+	await _click_point(s.target_center(&"rack", rack.id), MOUSE_BUTTON_RIGHT, _is_device_or_rack.bind(rack.id))
 	if not await _wait_mode(InteractionManager.Mode.PLACEMENT, 5.0):
 		return false
 	await _place_at(rack, GOOD_SPOT, GOOD_YAW, "rack_movido")
@@ -313,10 +407,21 @@ func _mount(rack: SimDevice) -> bool:
 	if not await _open(&"rack", rack.id):
 		return false
 	await _shot("rack_cerca")
+	await _manual("13_mover_rack", [_rect_of(_find_button(s.hud._side_box, "Mover rack")), _rect_of(_find_button(s.hud._side_box, "Recoger rack"))])
+	var first := _inventory(&"switch_16p_1u")
+	if first != null:
+		await _manual("14_rack_panel", [_rect_of(_find_button(s.hud._side_box, first.display_name())),
+			_rect_of(_find_button(s.hud._side_box, _inventory(&"server_1u_entry").display_name()))])
 	for pair: Array in [[&"switch_16p_1u", 9], [&"server_1u_entry", 5]]:
 		var d := _inventory(pair[0])
 		if d == null or not await _press(_find_button(s.hud._side_box, d.display_name()), "Montar " + d.display_name()):
 			return false
+		if pair[1] == 9 and scenario == "manual":
+			for area: Area3D in s.interaction._slot_areas:
+				if area.get_meta("u") == 9:
+					_motion(s.camera.unproject_position(area.global_position))
+					await _frames(4)
+					await _manual("15_montar", [], [s.camera.unproject_position(area.global_position)])
 		await _click_slot(pair[1])
 		if d.location != &"mounted":
 			_fail("%s no se montó" % d.display_name())
@@ -338,11 +443,17 @@ func _power(rack: SimDevice) -> bool:
 	await _rack_side(true)
 	if not await _choose_cable(&"power_cord_3m"):
 		return false
+	if scenario == "manual":
+		var psu := s.camera.unproject_position((s.device_views[sw.id] as DeviceView).port_areas[PortRef.make(sw.id, &"psu", 0)].global_position)
+		_motion(psu)
+		await _frames(4)
+		await _manual("16_puertos", [s.hud._tool.get_global_rect(), _hud_rect(s.hud._inventory_row)], [psu])
 	await _click_port(PortRef.make(sw.id, &"psu", 0))
 	await _shot("cable_corriente_pendiente")
 	await _leave()
 	if not await _open(&"device", strip.id):
 		return false
+	await _manual("18_regleta", [], [s.camera.unproject_position((s.device_views[strip.id] as DeviceView).port_areas[PortRef.make(strip.id, &"outlet", 2)].global_position)])
 	await _click_port(PortRef.make(strip.id, &"outlet", 2))
 	await _shot("regleta")
 	if not s.world.is_powered(sw):
@@ -358,6 +469,7 @@ func _power(rack: SimDevice) -> bool:
 		return false
 	await _rack_side(true)
 	await _click_port(PortRef.make(srv.id, &"psu", 0))
+	await _manual("20_encender", [_rect_of(_find_button(s.hud._side_box, "Encender"))])
 	if not await _press(_find_button(s.hud._side_box, "Encender"), "Encender"):
 		return false
 	if not await _wait(func() -> bool: return srv.is_running() and sw.is_running()):
@@ -493,6 +605,7 @@ func _server_ip(rack: SimDevice) -> bool:
 	await _type_line(console, "ip address show eth0")
 	await _frames(5)
 	await _shot("consola_servidor")
+	await _manual("21_consola", [console.input.get_global_rect()])
 	# The echo of the command line also contains the address: look for the output line.
 	if not console.output.get_parsed_text().contains("inet 192.168.1.50/24 scope global eth0"):
 		_fail("«ip address show eth0» no muestra la IP nueva")
@@ -505,7 +618,7 @@ func _server_ip(rack: SimDevice) -> bool:
 
 func _ping_from_pc() -> bool:
 	_note("10. Ping desde el PC: aplicación Terminal y orden tecleada")
-	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0))
+	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
 	if not await _wait_mode(InteractionManager.Mode.SCREEN):
 		return false
 	if not await _press(_find_button(s.screen, "Terminal"), "Terminal"):
@@ -514,10 +627,13 @@ func _ping_from_pc() -> bool:
 	await _type_line(s.screen._terminal, "ping -c 4 192.168.1.50")
 	await _frames(5)
 	await _shot("ping_desde_pc")
+	await _manual("22_ping", [_rect_of(_find_button(s.screen, "Terminal"))])
 	if not s.screen._terminal.output.get_parsed_text().contains("64 bytes from 192.168.1.50"):
 		_fail("el ping no respondió")
 	_key(KEY_ESCAPE)
 	await _wait_mode(InteractionManager.Mode.OVERVIEW)
+	await _wait(func() -> bool: return not s.character.busy, 5.0)
+	_check_standing("tras el ping")
 	await _frames(20)
 	return true
 
@@ -528,13 +644,345 @@ func _end_banner() -> bool:
 		return false
 	await _frames(5)
 	await _shot("mision_completada")
+	await _manual("23_mision", [s.hud._banner.get_global_rect()])
 	return await _press(_find_button(s.hud, "Seguir jugando"), "Seguir jugando")
+
+
+# --------------------------------------------------------------- new checks --
+
+## Esc opens the menu (game paused); Settings > Controls lists the real keys; F1 shows the manual
+## (index, a page, Next, Index); Esc closes it again.
+func _menu_controls_and_manual() -> bool:
+	_note("0b. Menú: Esc lo abre (pausa), Ajustes > Controles, manual con F1, Esc lo cierra")
+	_key(KEY_ESCAPE)
+	await _frames(3)
+	if not s.menu.visible or not get_tree().paused:
+		_fail("Esc en la vista general no abrió el menú en pausa")
+		return false
+	if not await _press(_find_button(s.menu, "Controles"), "Controles"):
+		return false
+	await _frames(3)
+	var texts: Array[String] = []
+	for node: Node in s.menu.find_children("*", "RichTextLabel", true, false):
+		texts.append((node as RichTextLabel).get_parsed_text())
+	var joined := " | ".join(texts)
+	for expected: String in ["Q / E", "Rueda hacia arriba", "W / A / S / D", "Esc", "F1", "Clic izquierdo"]:
+		if not joined.contains(expected):
+			_fail("la página de controles no muestra «%s»" % expected)
+	_note("  controles: %d filas" % texts.size())
+	await _shot("menu_controles")
+	await _manual("04_menu_controles", [_rect_of(_find_button(s.menu, "Controles")), _rect_of(_find_button(s.menu, "Manual (F1)"))])
+	_key(KEY_F1)
+	await _frames(4)
+	if s.menu.current != &"manual" or s.menu.manual == null:
+		_fail("F1 no abrió el manual")
+		return false
+	var manual := s.menu.manual
+	_note("  manual: %d capítulos" % manual.chapters.size())
+	if not await _press(_find_button_prefix(s.menu, "1. "), "capítulo 1"):
+		return false
+	await _frames(3)
+	var picture := s.menu.find_child("Picture", true, false) as TextureRect
+	if manual.chapter != 0 or picture == null or picture.texture == null:
+		_fail("la primera página del manual no muestra su imagen")
+	await _shot("manual_pagina")
+	if not await _press(_find_button(s.menu, "Siguiente ▶"), "Siguiente"):
+		return false
+	if manual.page != 1 and manual.chapter != 1:
+		_fail("«Siguiente» no avanzó de página")
+	if not await _press(_find_button(s.menu, "◀ Anterior"), "Anterior"):
+		return false
+	if manual.page != 0 or manual.chapter != 0:
+		_fail("«Anterior» no volvió a la primera página")
+	if not await _press(_find_button(s.menu, "Índice"), "Índice"):
+		return false
+	if manual.chapter != -1:
+		_fail("«Índice» no volvió al índice")
+	_key(KEY_ESCAPE)
+	await _frames(3)
+	if s.menu.visible or get_tree().paused:
+		_fail("Esc no cerró el menú")
+		return false
+	return true
+
+
+## Walking into narrow places, corners and next to the rack: the character either gets there or
+## says it cannot, never stays stuck, and never ends up inside something.
+func _narrow_walks() -> bool:
+	_note("3d. Caminar por espacios estrechos y esquinas")
+	var targets := [Vector3(1.5, 0.0, 0.5), Vector3(-1.0, 0.0, 0.72), Vector3(-1.55, 0.0, 1.3),
+		Vector3(0.95, 0.0, -0.62), Vector3(1.45, 0.0, -0.85), Vector3(0.40, 0.0, -0.05), POCKET, Vector3(0.3, 0.0, 1.3)]
+	for target: Vector3 in targets:
+		var toast := s.hud._toast.text
+		await _click_point(target)
+		var finished := await _wait(func() -> bool: return not s.character.moving, 15.0)
+		var c := s.character.global_position
+		var floor := NavigationServer3D.map_get_closest_point(s.get_world_3d().navigation_map, target)
+		var outcome := "llegó" if Vector2(c.x - floor.x, c.z - floor.z).length() < 0.3 else ("avisó: " + s.hud._toast.text if s.hud._toast.text != toast else "se detuvo en %s" % _v(c))
+		_note("  hacia %s: %s" % [_v(target), outcome])
+		if not finished:
+			_fail("el personaje sigue caminando tras 15 s hacia %s" % _v(target))
+		if not s.character.capsule_fits(c):
+			_fail("el personaje quedó dentro de algo en %s" % _v(c))
+	return true
+
+
+func _sit_stand_repeatedly(times: int) -> bool:
+	_note("11. Sentarse y levantarse %d veces seguidas" % times)
+	for i: int in times:
+		await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+		if not await _wait_mode(InteractionManager.Mode.SCREEN):
+			return false
+		if not s.character.seated:
+			_fail("vez %d: delante del ordenador sin estar sentado" % (i + 1))
+		_key(KEY_ESCAPE)
+		if not await _wait_mode(InteractionManager.Mode.OVERVIEW):
+			return false
+		await _wait(func() -> bool: return not s.character.busy, 5.0)
+		_check_standing("vez %d" % (i + 1))
+		_note("  vez %d: sentado y de pie en %s" % [i + 1, _v(s.character.global_position)])
+	await _click_point(Vector3(0.4, 0.0, 0.3))
+	if not s.character.moving and s.character.global_position.distance_to(Vector3(0.4, 0.0, 0.3)) > 0.3:
+		_fail("tras levantarse, el personaje no vuelve a caminar")
+	await _wait(func() -> bool: return not s.character.moving)
+	return true
+
+
+## Save sitting at the PC (menu from the PC screen), change the game, load: the saved state comes
+## back, the character stands on a free spot (never inside the chair), cables are drawn again.
+func _save_and_load(rack_id: int) -> void:
+	_note("12. Guardar sentado ante el PC, cambiar la partida y cargar")
+	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	if not await _wait_mode(InteractionManager.Mode.SCREEN):
+		return
+	if not await _press(_find_button(s.screen, "Menú"), "Menú (pantalla del PC)"):
+		return
+	var saved := _snapshot()
+	if not await _press(_find_button(s.menu, "Guardar partida"), "Guardar partida"):
+		return
+	if not s.menu._status.text.contains("guardada"):
+		_fail("guardar no confirma: «%s»" % s.menu._status.text)
+	await _press(_find_button(s.menu, "Continuar (Esc)"), "Continuar")
+	_key(KEY_ESCAPE)
+	await _wait_mode(InteractionManager.Mode.OVERVIEW)
+	await _wait(func() -> bool: return not s.character.busy, 5.0)
+	if not await _open(&"rack", rack_id):
+		return
+	await _press(_find_button(s.hud._side_box, "Desconectar todos los cables"), "Desconectar todos los cables")
+	await _leave()
+	if _snapshot() == saved:
+		_fail("el cambio después de guardar no se notó")
+	_key(KEY_ESCAPE)
+	await _frames(3)
+	var old_id := s.get_instance_id() # an id, not the session: the old one is freed on loading
+	if not await _press(_find_button(s.menu, "Cargar partida"), "Cargar partida"):
+		return
+	if not await _wait(func() -> bool: return is_instance_valid(s) and s.get_instance_id() != old_id, 10.0):
+		_fail("la partida no se cargó")
+		return
+	await _frames(90) # views, navigation bake
+	var loaded := _snapshot()
+	for key: String in saved:
+		if str(saved[key]) != str(loaded[key]):
+			_fail("tras cargar, «%s» no coincide:\n guardado %s\n cargado  %s" % [key, saved[key], loaded[key]])
+	_note("  estado guardado y cargado idéntico (%d equipos, %d cables)" % [(loaded["devices"] as Array).size(), (loaded["cables"] as Array).size()])
+	_check_standing("tras cargar")
+	var chair := s.room.chair.global_position
+	if Vector2(s.character.global_position.x - chair.x, s.character.global_position.z - chair.z).length() < 0.35:
+		_fail("tras cargar, el personaje está dentro de la silla")
+	await _check_cables_clear("tras cargar")
+	var rack_view := s.device_views.get(rack_id) as DeviceView
+	for d: SimDevice in s.world.mounted_in(s.world.get_device(rack_id)):
+		var view := s.device_views.get(d.id) as DeviceView
+		if view == null or not view.visible or view.global_position.distance_to(rack_view.global_position) > 0.8:
+			_fail("tras cargar, %s no está en su rack" % d.display_name())
+	await _shot("tras_cargar")
+
+
+func _snapshot() -> Dictionary:
+	var devices: Array = []
+	for d: SimDevice in s.world.devices.values():
+		devices.append([d.id, String(d.location), d.position.snapped(Vector3.ONE * 0.001), d.yaw_degrees, d.rack_id, d.rack_u, String(d.state)])
+	devices.sort()
+	var cables: Array = []
+	for id: int in s.world.cable_ends:
+		cables.append([id, s.world.cable_ends[id]["a"], s.world.cable_ends[id]["b"]])
+	cables.sort()
+	return {"credits": s.world.credits, "xp": s.world.xp, "completed": s.world.mission.completed,
+		"devices": devices, "cables": cables, "packages": s.world.packages.size()}
+
+
+## blocking: the three ways to the chair are blocked (test boxes): the character says so and
+## does not move or teleport; once they are gone it sits down normally.
+func _chair_blocked() -> void:
+	_note("12. Silla bloqueada por los dos lados y por detrás (cajas de prueba)")
+	await _click_point(Vector3(0.3, 0.0, 1.0)) # away from the chair before the boxes appear
+	await _wait(func() -> bool: return not s.character.moving)
+	var boxes: Array[Node3D] = []
+	for spot: Vector3 in s.chair_spots():
+		var body := StaticBody3D.new()
+		body.collision_layer = Layers.DEVICES
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(0.62, 0.4, 0.62)
+		shape.shape = box
+		shape.position = Vector3(0.0, 0.2, 0.0)
+		body.add_child(shape)
+		s.room.objects.add_child(body)
+		body.global_position = spot
+		boxes.append(body)
+	await _rebake()
+	var before := s.character.global_position
+	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	await _frames(15)
+	if s.interaction.mode != InteractionManager.Mode.OVERVIEW or not s.hud._toast.text.contains("No puedo llegar a la silla"):
+		_fail("con la silla bloqueada no avisa (modo %d, «%s»)" % [s.interaction.mode, s.hud._toast.text])
+	if s.character.seated or s.character.global_position.distance_to(before) > 0.05:
+		_fail("con la silla bloqueada el personaje se movió o se sentó")
+	await _shot("silla_bloqueada")
+	for body: Node3D in boxes:
+		body.queue_free()
+	await _frames(2)
+	await _rebake()
+	await _click_point(GameSession.MONITOR_POSITION + Vector3(0.0, 0.3, 0.0), MOUSE_BUTTON_LEFT, _is_computer)
+	if await _wait_mode(InteractionManager.Mode.SCREEN):
+		_key(KEY_ESCAPE)
+		await _wait_mode(InteractionManager.Mode.OVERVIEW)
+		await _wait(func() -> bool: return not s.character.busy, 5.0)
+		_check_standing("tras desbloquear la silla")
+
+
+func _rebake() -> void:
+	var done := [false]
+	s.room.nav_region.bake_finished.connect(func() -> void: done[0] = true, CONNECT_ONE_SHOT)
+	s.room.request_bake()
+	await _wait(func() -> bool: return done[0], 10.0)
+	await _frames(3)
+
+
+## manual: the last pictures (a cable that does not reach, the save menu).
+func _manual_epilogue() -> void:
+	_note("11. Capturas finales del manual")
+	var rack := s.world.devices_of(&"rack")[0]
+	var sw := _mounted(rack, &"switch_16p_1u")
+	var router := s.world.devices_of(&"router")[0]
+	if not await _open(&"rack", rack.id):
+		return
+	await _rack_side(false)
+	if not await _choose_cable(&"cable_cat6_1m"):
+		return
+	await _click_port(PortRef.make(sw.id, &"lan", 2))
+	await _leave()
+	if not await _open(&"device", router.id):
+		return
+	await _click_port(PortRef.make(router.id, &"lan", 2))
+	if not s.hud._toast.text.contains("no llega"):
+		_fail("esperaba «el cable no llega»: «%s»" % s.hud._toast.text)
+	await _manual("19_cable_no_llega", [s.hud._toast.get_global_rect()])
+	await _leave()
+	# A cable is still chosen (first Esc would drop it): use the HUD button.
+	await _press(_find_button(s.hud, "Menú (Esc)"), "Menú (HUD)")
+	await _frames(3)
+	await _press(_find_button(s.menu, "Guardar partida"), "Guardar partida")
+	await _manual("24_menu_guardar", [_rect_of(_find_button(s.menu, "Guardar partida")), _rect_of(_find_button(s.menu, "Cargar partida")), s.menu._status.get_global_rect()])
+	_key(KEY_ESCAPE)
+	await _frames(3)
+
+
+func _find_button_prefix(root: Node, prefix: String) -> Button:
+	for node: Node in root.find_children("*", "Button", true, false):
+		var b := node as Button
+		if b.text.begins_with(prefix) and b.is_visible_in_tree() and not b.is_queued_for_deletion():
+			return b
+	return null
+
+
+# ------------------------------------------------------------ manual shots --
+
+## Screenshot for the in-game manual (scenario "manual" only): the current frame with the given
+## screen rectangles framed and screen points circled, saved as res://assets/manual/<name>.png.
+func _manual(name: String, rects: Array = [], points: Array = []) -> void:
+	if scenario != "manual":
+		return
+	await RenderingServer.frame_post_draw
+	var image := get_viewport().get_texture().get_image()
+	image.convert(Image.FORMAT_RGBA8)
+	for r: Variant in rects:
+		var rect: Rect2 = r
+		if rect.size.x > 0.0:
+			_frame(image, rect.grow(6.0))
+	for p: Variant in points:
+		_ring(image, p as Vector2, 34.0)
+	image.resize(MANUAL_SIZE.x, MANUAL_SIZE.y, Image.INTERPOLATE_LANCZOS)
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(MANUAL_DIR))
+	var path := ProjectSettings.globalize_path(MANUAL_DIR.path_join(name + ".png"))
+	var err := image.save_png(path)
+	_note("  manual: %s.png (%s)" % [name, error_string(err)])
+	if err != OK:
+		_fail("no se pudo guardar la captura del manual %s" % name)
+
+
+func _frame(image: Image, rect: Rect2) -> void:
+	var r := Rect2i(rect)
+	var t := 4
+	for band: Rect2i in [Rect2i(r.position.x, r.position.y, r.size.x, t), Rect2i(r.position.x, r.end.y - t, r.size.x, t),
+			Rect2i(r.position.x, r.position.y, t, r.size.y), Rect2i(r.end.x - t, r.position.y, t, r.size.y)]:
+		var clipped := band.intersection(Rect2i(Vector2i.ZERO, image.get_size()))
+		if clipped.size.x > 0 and clipped.size.y > 0:
+			image.fill_rect(clipped, MARK)
+
+
+func _ring(image: Image, centre: Vector2, radius: float) -> void:
+	var bounds := Rect2i(Vector2i.ZERO, image.get_size())
+	for k: int in 720:
+		var a := TAU * k / 720.0
+		for w: int in 4:
+			var p := Vector2i(centre + Vector2(cos(a), sin(a)) * (radius + w))
+			if bounds.has_point(p):
+				image.set_pixelv(p, MARK)
+
+
+func _hud_rect(control: Control) -> Rect2:
+	var node: Node = control
+	# Frame the panel that contains the control, not just the label.
+	while node != null and not (node is PanelContainer):
+		node = node.get_parent()
+	return (node as Control).get_global_rect() if node != null else control.get_global_rect()
+
+
+func _rect_of(button: Control) -> Rect2:
+	return button.get_global_rect() if button != null else Rect2()
 
 
 # ----------------------------------------------------------------- helpers --
 
+## An invalid spot: the ghost turns red, the preview gives the reason and a click does nothing.
+func _invalid_spot(rack: SimDevice, spot: Vector3, yaw: float, reason: String, manual_name: String = "") -> void:
+	var before := rack.location
+	await _place_at(rack, spot, yaw, "no_valido", manual_name)
+	if rack.location != before:
+		_fail("el rack se colocó en un sitio no válido %s" % _v(spot))
+	if not s.hud._toast.text.contains(reason):
+		_fail("el rechazo en %s no explica «%s»: «%s»" % [_v(spot), reason, s.hud._toast.text])
+	if not _ghost_is_red():
+		_fail("el fantasma no se pone rojo en un sitio no válido")
+	if s.interaction.mode != InteractionManager.Mode.PLACEMENT:
+		_fail("tras el rechazo se perdió el modo de colocación")
+
+
+func _ghost_is_red() -> bool:
+	var ghost := s.interaction._ghost
+	if ghost == null:
+		return false
+	for mesh: MeshInstance3D in ModelUtil.find_meshes_with_prefix(ghost, ""):
+		var overlay := mesh.material_overlay as StandardMaterial3D
+		if overlay != null and overlay.albedo_color.r > 0.8 and overlay.albedo_color.g < 0.4:
+			return true
+	return false
+
+
 ## Rotates the ghost with R to `yaw`, points at `spot` and clicks. Returns the preview text.
-func _place_at(rack: SimDevice, spot: Vector3, yaw: float, shot_label: String) -> String:
+func _place_at(rack: SimDevice, spot: Vector3, yaw: float, shot_label: String, manual_name: String = "") -> String:
 	for _i: int in 4:
 		if is_equal_approx(s.interaction._ghost_yaw, yaw):
 			break
@@ -546,6 +994,8 @@ func _place_at(rack: SimDevice, spot: Vector3, yaw: float, shot_label: String) -
 	var preview := s.hud._tool.text
 	_note("  vista previa en %s, %d°: %s" % [_v(spot), int(yaw), preview.replace("\n", " | ")])
 	await _shot(shot_label)
+	if manual_name != "":
+		await _manual(manual_name, [s.hud._tool.get_global_rect()], [s.camera.unproject_position(spot + Vector3(0, 0.35, 0))])
 	await _click_screen(screen)
 	_note("  -> %s" % s.hud._toast.text)
 	if rack.location == &"placed" and rack.position.distance_to(spot) > 0.03:
@@ -564,7 +1014,7 @@ func _ensure_rack_closeup(rack: SimDevice) -> bool:
 ## Opens a close-up with a real click. If the click does not work it is a failure; the direct
 ## action is then used only to keep collecting information for the rest of the run.
 func _open(kind: StringName, target_id: int) -> bool:
-	await _click_point(s.target_center(kind, target_id))
+	await _click_point(s.target_center(kind, target_id), MOUSE_BUTTON_LEFT, _is_device_or_rack.bind(target_id))
 	if not await _wait(func() -> bool: return s.interaction.mode == InteractionManager.Mode.CLOSEUP, 12.0):
 		var map := s.get_world_3d().navigation_map
 		var from := s.character.global_position
@@ -632,11 +1082,55 @@ func _click_slot(u: int) -> void:
 	_fail("no hay hueco U%d" % u)
 
 
-func _click_point(point: Vector3, button: MouseButton = MOUSE_BUTTON_LEFT) -> void:
+## Clicks a world point, as a player would: if something else is in front of it from the current
+## camera angle (the rack hiding the floor behind it, a box hiding the monitor), the camera is
+## turned first with a right drag. `check` tells whether the first collider under the cursor is
+## the intended one; without it, a floor point (y ≈ 0) must be the floor itself.
+func _click_point(point: Vector3, button: MouseButton = MOUSE_BUTTON_LEFT, check: Callable = Callable()) -> void:
+	for attempt: int in 8:
+		if _target_visible(point, check):
+			break
+		_note("  %s está tapado desde esta cámara: giro la vista" % _v(point))
+		var centre := s.get_viewport().get_visible_rect().size / 2.0
+		await _drag(centre, Vector2(140.0, 0.0), MOUSE_BUTTON_RIGHT)
+		await _frames(40)
 	var before := s.hud._toast.text
 	await _click_screen(s.camera.unproject_position(point), button)
 	if s.hud._toast.text != before:
 		_note("  mensaje: " + s.hud._toast.text)
+
+
+func _target_visible(point: Vector3, check: Callable) -> bool:
+	if s.interaction.mode != InteractionManager.Mode.OVERVIEW and s.interaction.mode != InteractionManager.Mode.PLACEMENT:
+		return true # close-ups and placement have their own checks
+	if not check.is_valid() and point.y > 0.02:
+		return true
+	var screen := s.camera.unproject_position(point)
+	var from := s.camera.project_ray_origin(screen)
+	var query := PhysicsRayQueryParameters3D.create(from, from + s.camera.project_ray_normal(screen) * 30.0, Layers.WORLD_PICK)
+	var hit := s.get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return false
+	if check.is_valid():
+		return check.call(hit["collider"] as Node)
+	var p: Vector3 = hit["position"]
+	return not (hit["collider"] as Node).has_meta("device_id") and Vector2(p.x - point.x, p.z - point.z).length() < 0.1
+
+
+## Collider checks for _click_point.
+func _is_computer(collider: Node) -> bool:
+	return collider.has_meta("computer_id")
+
+
+func _is_package_stack(collider: Node) -> bool:
+	return collider.has_meta("package_stack")
+
+
+func _is_device_or_rack(collider: Node, device_id: int) -> bool:
+	if not collider.has_meta("device_id"):
+		return false
+	var d := s.world.get_device(collider.get_meta("device_id"))
+	return d != null and (d.id == device_id or d.rack_id == device_id)
 
 
 func _click_screen(screen_pos: Vector2, button: MouseButton = MOUSE_BUTTON_LEFT) -> void:
@@ -658,6 +1152,20 @@ func _press(b: BaseButton, label: String) -> bool:
 	if scroll != null:
 		scroll.ensure_control_visible(b) # what the player does with the mouse wheel
 		await _frames(2)
+	# A page that was just built can still move (containers settle over a few frames): click
+	# once the button stays put, as a player's eye would.
+	var settled := 0
+	var last := Rect2()
+	var waited := 0
+	while settled < 3 and waited < 60 and is_instance_valid(b):
+		var rect := b.get_global_rect()
+		settled = settled + 1 if rect.is_equal_approx(last) else 0
+		last = rect
+		waited += 1
+		await _frames(1)
+	if not is_instance_valid(b):
+		_fail("el botón «%s» desapareció antes del clic" % label)
+		return false
 	if not b.is_visible_in_tree() or b.disabled:
 		_fail("el botón «%s» no está disponible" % label)
 		return false

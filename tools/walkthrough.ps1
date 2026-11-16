@@ -5,16 +5,22 @@
 #   powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1                 # all scenarios
 #   powershell -ExecutionPolicy Bypass -File tools\walkthrough.ps1 -Scenario far   # just one
 #
-# Scenarios (where the rack goes): basic, wall, far, blocking (game/debug/walkthrough_driver.gd).
+# Scenarios: basic, wall, far, blocking (where the rack goes) and manual (takes the annotated
+# screenshots of the in-game manual into assets\manual\; not part of 'all'). See game/debug/walkthrough_driver.gd.
 # Output: build\walkthrough\<scenario>\NN_<step>.png and walkthrough_log.txt (not versioned).
 param(
-    [ValidateSet('all', 'basic', 'wall', 'far', 'blocking')]
+    [ValidateSet('all', 'basic', 'wall', 'far', 'blocking', 'manual')]
     [string]$Scenario = 'all',
     [string]$OutDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'build\walkthrough'),
     [string]$Resolution = '1600x900'
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\godot-common.ps1"
+
+# Screenshots are not game resources: keep Godot from importing them.
+$buildRoot = Split-Path $OutDir -Parent
+New-Item -ItemType Directory -Force -Path $buildRoot | Out-Null
+if (-not (Test-Path (Join-Path $buildRoot '.gdignore'))) { New-Item -ItemType File -Path (Join-Path $buildRoot '.gdignore') | Out-Null }
 
 $names = if ($Scenario -eq 'all') { @('basic', 'wall', 'far', 'blocking') } else { @($Scenario) }
 $failed = @()

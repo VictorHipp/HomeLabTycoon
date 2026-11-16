@@ -452,6 +452,9 @@ def build_desk():
 
 
 def build_chair():
+    """Swivel office chair; its front (where the knees go) faces -Y (Godot +Z). SEAT = top of the
+    seat, where the hips of a seated character go (slightly towards the backrest)."""
+    empty("SEAT", (0, 0.04, 0.505))
     box("seat", (0.46, 0.46, 0.07), (0, 0, 0.47), "salvia", chamfer=0.3)
     box("back", (0.44, 0.06, 0.42), (0, 0.22, 0.75), "salvia", chamfer=0.3, rot=(math.radians(-8), 0, 0))
     cylinder("column", 0.025, 0.36, (0, 0, 0.25), "grafito", segments=10)
@@ -566,16 +569,34 @@ def build_room_bedroom():
     box("skirting_left", (0.015, D, 0.08), (-W / 2 + 0.0075, 0, 0.04), "terracota")
     box("skirting_front", (W, 0.015, 0.08), (0, -D / 2 + 0.0075, 0.04), "terracota")
     box("skirting_right", (0.015, D, 0.08), (W / 2 - 0.0075, 0, 0.04), "terracota")
-    empty("DELIVERY_POINT", (-W / 2 + 0.45, door_y, 0))
+    # Centre of the reserved delivery zone (sim/world/bedroom_scenario.gd DELIVERY_ZONE), inside the
+    # entrance against the front wall, right of the door (Godot x -0.65, z 1.20).
+    empty("DELIVERY_POINT", (-0.65, -1.20, 0))
 
 
 def build_mannequin():
-    """Scale mannequin (~1.75 m), NOT the final character: proportions reference only."""
-    for sx in (-1, 1):
-        box(f"leg_{sx}", (0.13, 0.15, 0.80), (sx * 0.085, 0, 0.44), "tinta", chamfer=0.3)
-        box(f"shoe_{sx}", (0.13, 0.24, 0.07), (sx * 0.085, -0.03, 0.035), "grafito", chamfer=0.4)
-        box(f"arm_{sx}", (0.095, 0.11, 0.54), (sx * 0.265, 0, 1.08), "salvia", chamfer=0.4)
-        sphere(f"hand_{sx}", 0.055, (sx * 0.27, 0, 0.79), "piel", segments=10, rings=7)
+    """Scale mannequin (~1.75 m), NOT the final character: proportions reference only.
+    Articulated for the procedural animation (game/character/character_animator.gd): every limb
+    hangs from an empty placed on its joint (J_hip / J_knee / J_ankle, J_shoulder / J_elbow,
+    suffix _L / _R), so rotating the empty in Godot bends the limb at the right place.
+    Standing: hips at 0.84 m, knees at 0.44 m, ankles at 0.07 m, shoulders at 1.35 m."""
+    for sx, side in ((-1, "L"), (1, "R")):
+        x = sx * 0.085
+        hip = empty(f"J_hip_{side}", (x, 0, 0.84), size=0.05)
+        knee = empty(f"J_knee_{side}", (x, 0, 0.44), size=0.05)
+        ankle = empty(f"J_ankle_{side}", (x, 0, 0.07), size=0.05)
+        parent_keep(box(f"thigh_{sx}", (0.13, 0.15, 0.41), (x, 0, 0.64), "tinta", chamfer=0.3), hip)
+        parent_keep(box(f"shin_{sx}", (0.12, 0.14, 0.39), (x, 0, 0.255), "tinta", chamfer=0.3), knee)
+        parent_keep(box(f"shoe_{sx}", (0.13, 0.24, 0.07), (x, -0.03, 0.035), "grafito", chamfer=0.4), ankle)
+        parent_keep(ankle, knee)
+        parent_keep(knee, hip)
+        ax = sx * 0.265
+        shoulder = empty(f"J_shoulder_{side}", (ax, 0, 1.35), size=0.05)
+        elbow = empty(f"J_elbow_{side}", (ax, 0, 1.08), size=0.05)
+        parent_keep(box(f"upperarm_{sx}", (0.095, 0.11, 0.28), (ax, 0, 1.215), "salvia", chamfer=0.4), shoulder)
+        parent_keep(box(f"forearm_{sx}", (0.09, 0.105, 0.26), (ax, 0, 0.95), "salvia", chamfer=0.4), elbow)
+        parent_keep(sphere(f"hand_{sx}", 0.055, (sx * 0.27, 0, 0.79), "piel", segments=10, rings=7), elbow)
+        parent_keep(elbow, shoulder)
     box("torso", (0.44, 0.25, 0.60), (0, 0, 1.12), "salvia", chamfer=0.35)
     cylinder("neck", 0.055, 0.08, (0, 0, 1.45), "piel", segments=10)
     sphere("head", 0.145, (0, 0, 1.60), "piel", segments=14, rings=10, scale=(1.0, 0.95, 1.05))

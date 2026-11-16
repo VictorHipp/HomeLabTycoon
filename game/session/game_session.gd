@@ -4,7 +4,6 @@ extends Node3D
 ## builds the presentation around it — room, character, camera, device/package/cable views,
 ## HUD and the computer screen. Views re-sync whenever the simulation emits an event.
 
-const PC_STAND := Vector3(-0.05, 0.0, -0.55)
 const MONITOR_MODEL := "res://assets/models/compute/monitor_old.glb"
 const KEYBOARD_MODEL := "res://assets/models/compute/keyboard_mouse.glb"
 const MONITOR_POSITION := Vector3(0.40, 0.75, -1.30)
@@ -23,6 +22,7 @@ var director: CameraDirector
 var hud: Hud
 var screen: ComputerScreen
 var interaction: InteractionManager
+var menu: GameMenu
 var cables: CableRenderer
 var device_views: Dictionary = {} ## device id -> DeviceView
 var package_stack: PackageView ## All waiting boxes, stacked in the delivery zone.
@@ -85,6 +85,11 @@ func _ready() -> void:
 	interaction = InteractionManager.new()
 	add_child(interaction)
 	interaction.setup(self)
+	menu = GameMenu.new()
+	add_child(menu)
+	menu.setup(self)
+	hud.menu_requested.connect(menu.open.bind(&"controls"))
+	screen.menu_requested.connect(menu.open.bind(&"controls"))
 	_build_click_marker()
 	world.event_emitted.connect(_on_world_event)
 	_sync_views()
@@ -250,10 +255,22 @@ func port_global_transform(port_ref: String) -> Dictionary:
 
 # ------------------------------------------------- interaction geometry -----
 
+## Where the character can stand to sit on the desk chair: beside it (left, right) or behind it,
+## in the chair's resting frame. The interaction walks to the nearest reachable one.
+func chair_spots() -> Array[Vector3]:
+	var c := room.chair.global_position
+	var basis := Basis(Vector3.UP, deg_to_rad(RoomView.CHAIR_REST_YAW))
+	var spots: Array[Vector3] = []
+	for local: Vector3 in [Vector3(0.5, 0.0, -0.07), Vector3(-0.5, 0.0, -0.07), Vector3(0.0, 0.0, -0.6)]:
+		var p := c + basis * local
+		spots.append(Vector3(p.x, 0.0, p.z))
+	return spots
+
+
 func stand_point(kind: StringName, target_id: int) -> Vector3:
 	match kind:
 		&"computer":
-			return PC_STAND
+			return chair_spots()[0]
 		&"package":
 			var p := package_stack.global_position
 			return clamp_to_room(p + Vector3(-p.x, 0.0, -p.z).normalized() * 0.55, STAND_ROOM_MARGIN)

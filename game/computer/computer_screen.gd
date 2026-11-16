@@ -5,6 +5,7 @@ extends CanvasLayer
 ## the prototype uses the full-screen variant; the shared SubViewport is spike S2).
 
 signal closed
+signal menu_requested
 
 var world: SimWorld
 var pc_id: int = -1
@@ -42,6 +43,7 @@ func setup(sim_world: SimWorld, pc_device_id: int) -> void:
 	bar_row.add_child(_credits)
 	_clock = UiStyle.label("", 16)
 	bar_row.add_child(_clock)
+	bar_row.add_child(UiStyle.button(TranslationServer.translate("Menú"), func() -> void: menu_requested.emit()))
 	bar_row.add_child(UiStyle.button(TranslationServer.translate("Levantarse (Esc)"), close))
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL

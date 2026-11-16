@@ -1,12 +1,12 @@
 class_name CableRouter
 extends RefCounted
 ## Finds where a cable lies on the floor (docs/INTERACTION_SYSTEM.md §9): a shortest path on a
-## 5 cm grid (Godot's AStarGrid2D) that goes around furniture that stands on the floor, floor
+## 2.5 cm grid (Godot's AStarGrid2D) that goes around furniture that stands on the floor, floor
 ## devices and the delivery zone, then pulled taut (line-of-sight shortcuts), so it hugs the
 ## corners it bends around, like a real cable. Pure logic: the presentation only draws it.
 
-const CELL := 0.05
-const CLEARANCE := 0.02 ## Distance kept from walls and obstacles (cable radius + margin).
+const CELL := 0.025 ## Fine enough to pass between a desk leg and the cabinet (5.75 cm gap).
+const CLEARANCE := 0.012 ## Distance kept from obstacles (drawn cable radius 9.5 mm + margin).
 
 var _grid: AStarGrid2D
 var _bounds: Rect2
