@@ -19,6 +19,11 @@ const DEFAULTS := {
 	&"close_interaction": [[&"key", KEY_ESCAPE]],
 	&"rotate_object": [[&"key", KEY_R]],
 	&"open_manual": [[&"key", KEY_F1]],
+	&"time_pause": [[&"key", KEY_SPACE]],
+	&"time_speed_1": [[&"key", KEY_1]],
+	&"time_speed_2": [[&"key", KEY_2]],
+	&"time_speed_4": [[&"key", KEY_3]],
+	&"quick_save": [[&"key", KEY_F5]],
 }
 
 

@@ -105,7 +105,7 @@ func _build_preview() -> Control:
 	container.gui_input.connect(_on_preview_input)
 	var viewport := SubViewport.new()
 	viewport.own_world_3d = true
-	viewport.msaa_3d = Viewport.MSAA_4X
+	GameSettings.apply_viewport(viewport)
 	container.add_child(viewport)
 	var world := Node3D.new()
 	viewport.add_child(world)
@@ -138,6 +138,13 @@ func _build_preview() -> Control:
 func _process(delta: float) -> void:
 	if _pivot != null and not _dragging:
 		_pivot.rotation.y += TURN_SPEED * delta
+
+
+## Esc goes back to the title menu, as the "Volver" button.
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event.is_action_pressed(&"close_interaction"):
+		get_viewport().set_input_as_handled()
+		back_requested.emit()
 
 
 func _on_preview_input(event: InputEvent) -> void:

@@ -42,6 +42,7 @@ var _pending_move: int = -1 ## Rack to move once the camera is back in the overv
 var _right_down: bool = false
 var _right_press_pos: Vector2 = Vector2.ZERO
 var _console: CanvasLayer = null
+var hover_tip: HoverTip ## Name and mouse actions of what is under the cursor in the overview.
 
 
 func setup(game: GameSession) -> void:
@@ -65,6 +66,11 @@ func setup(game: GameSession) -> void:
 	session.character.unreachable.connect(_on_unreachable)
 	session.character.blocked.connect(_on_blocked)
 	session.hud.set_hint(TranslationServer.translate(HINT_OVERVIEW))
+	hover_tip = HoverTip.new()
+	hover_tip.name = "HoverTip"
+	add_child(hover_tip)
+	hover_tip.still_valid = func() -> bool:
+		return mode in [Mode.OVERVIEW, Mode.APPROACH] and not session.rig.is_dragging()
 	cable_tool = CableTool.new()
 	add_child(cable_tool)
 	cable_tool.setup(session)
@@ -78,13 +84,38 @@ func closeup_device() -> int:
 
 # ------------------------------------------------------------------- input --
 
+## Esc in the overview: give up the cable being laid, or open the menu. Read before the
+## interface: a help text showing over a HUD button (a popup) would swallow the key otherwise.
+## In the other modes Esc is read in _unhandled_input, after this (so the Esc that cancels a
+## placement does not also open the menu).
+func _input(event: InputEvent) -> void:
+	if not event.is_action_pressed(&"close_interaction") or event.is_echo():
+		return
+	if mode == Mode.CONSOLE: # before the terminal's text field sees it
+		get_viewport().set_input_as_handled()
+		_close_console()
+		return
+	if not (mode in [Mode.OVERVIEW, Mode.APPROACH]):
+		return
+	get_viewport().set_input_as_handled()
+	hover_tip.hide_tip()
+	if cable_tool.active():
+		# First Esc gives up the cable being laid (its plugged end too: ADR 0011).
+		cable_tool.cancel(TranslationServer.translate("Cable cancelado: ha vuelto al inventario."))
+		_update_tool_text()
+	else:
+		session.menu.open()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	var button := event as InputEventMouseButton
 	var motion := event as InputEventMouseMotion
-	var start_mode := mode # Esc that cancels a placement must not also open the menu
 	match mode:
 		Mode.OVERVIEW, Mode.APPROACH:
-			if button != null and button.pressed and event.is_action(&"interact"):
+			if motion != null:
+				_hover_overview(motion.position)
+			elif button != null and button.pressed and event.is_action(&"interact"):
+				hover_tip.hide_tip()
 				_click_world(button.position)
 			elif button != null and event.is_action(&"secondary"):
 				# Right button: dragging turns the camera (OverviewCameraRig); a click without
@@ -133,14 +164,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.is_action_pressed(&"rotate_object"):
 				_ghost_yaw = fposmod(_ghost_yaw + 90.0, 360.0)
 				_update_ghost()
-	if start_mode in [Mode.OVERVIEW, Mode.APPROACH] and event.is_action_pressed(&"close_interaction"):
-		get_viewport().set_input_as_handled()
-		if cable_tool.active():
-			# First Esc gives up the cable being laid (its plugged end too: ADR 0011).
-			cable_tool.cancel(TranslationServer.translate("Cable cancelado: ha vuelto al inventario."))
-			_update_tool_text()
-		else:
-			session.menu.open()
 
 
 ## Raycast from the camera. With `areas` (ports, rack units) an area only counts when no
@@ -196,6 +219,61 @@ func _click_world(screen_pos: Vector2) -> void:
 		mode = Mode.OVERVIEW
 		var ok := session.character.move_to(hit["position"])
 		session.spawn_click_marker(hit["position"], ok)
+
+
+## Under the cursor in the overview: what it is and what each mouse button does with it (the
+## same rules as _click_world and _right_click_world), in a label by the cursor.
+func _hover_overview(screen_pos: Vector2) -> void:
+	if session.rig.is_dragging():
+		hover_tip.hide_tip()
+		return
+	var info := hover_info(screen_pos)
+	if info.is_empty():
+		hover_tip.hide_tip()
+	else:
+		hover_tip.show_tip(screen_pos, info["title"], info["actions"])
+
+
+## {"title": String, "actions": PackedStringArray} for what is under `screen_pos`, or {} over
+## the bare floor, a wall or nothing.
+func hover_info(screen_pos: Vector2) -> Dictionary:
+	var hit := _ray(screen_pos, Layers.WORLD_PICK)
+	if hit.is_empty():
+		return {}
+	var world := session.world
+	var collider := hit["collider"] as Node
+	var use := TranslationServer.translate("%s: ") % ControlsReference.keys_for([&"interact"])
+	var move := TranslationServer.translate("%s: ") % ControlsReference.keys_for([&"secondary"])
+	var actions := PackedStringArray()
+	if collider.has_meta("computer_id"):
+		actions.append(use + TranslationServer.translate("sentarte y usar el ordenador"))
+		actions.append(move + TranslationServer.translate("mover el escritorio con todo lo suyo"))
+		return {"title": world.get_device(collider.get_meta("computer_id")).display_name(), "actions": actions}
+	if collider.has_meta("package_stack"):
+		actions.append(use + TranslationServer.translate("ir a abrir la caja de arriba"))
+		return {"title": TranslationServer.translate("Cajas de tu pedido (×%d)") % world.packages.size(), "actions": actions}
+	if collider.has_meta("device_id"):
+		var d := world.get_device(collider.get_meta("device_id"))
+		var title := d.display_name()
+		if d.location == &"mounted":
+			var rack := world.get_device(d.rack_id)
+			title = TranslationServer.translate("%s (en %s, U%d)") % [title, rack.display_name(), d.rack_u]
+			actions.append(use + TranslationServer.translate("ver el rack de cerca"))
+			actions.append(move + TranslationServer.translate("mover el rack"))
+		else:
+			actions.append(use + TranslationServer.translate("verlo de cerca (puertos y cables)"))
+			if d.location == &"placed":
+				actions.append(move + TranslationServer.translate("moverlo"))
+			elif d.definition.placement == &"desk":
+				actions.append(move + TranslationServer.translate("pasarlo a otro mueble"))
+			else:
+				actions.append(move + TranslationServer.translate("mover el mueble en el que está"))
+		return {"title": title, "actions": actions}
+	var furniture_id: StringName = collider.get_meta("furniture_id") if collider.has_meta("furniture_id") else world.flat_furniture_at(hit["position"])
+	if furniture_id == &"":
+		return {}
+	actions.append(move + TranslationServer.translate("cambiar de sitio"))
+	return {"title": world.get_furniture(furniture_id).display_name(), "actions": actions}
 
 
 ## Right click in the overview: move a placed rack or a piece of furniture directly (no need to
@@ -951,12 +1029,6 @@ func _close_console() -> void:
 		if mode == Mode.CONSOLE:
 			mode = Mode.CLOSEUP
 			refresh_panel()
-
-
-func _input(event: InputEvent) -> void:
-	if mode == Mode.CONSOLE and event.is_action_pressed(&"close_interaction"):
-		get_viewport().set_input_as_handled()
-		_close_console()
 
 
 ## Console (for tests and the automated walkthrough): the TerminalView in use, or null.

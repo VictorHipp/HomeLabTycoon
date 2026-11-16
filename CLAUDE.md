@@ -30,6 +30,12 @@ Simulador 3D de construcción y administración de infraestructura informática.
   - `game/main/main.tscn` es un lanzador (`GameLauncher`): muestra el título (nueva partida con el creador de personaje, cargar, salir) o entra directo en el juego si hay una partida pendiente, con el recorrido o con `-- --new-game`;
   - el personaje se personaliza (cuerpo chico o chica, pelo, barba, gafas, prenda y colores) según `data/character/appearance_options.tres`;
   - el aspecto se guarda en la sección `session` ([ADR 0014](docs/adr/0014-title-menu-and-character-look.md)).
+- **Autoguardado, ajustes y comodidades (2026-11-16, decisiones de Claude a petición del usuario; [ADR 0015](docs/adr/0015-autosave-settings-and-quality-of-life.md)):**
+  - autoguardado en `partida_auto.json` (nunca sobre la partida del jugador), «Continuar» en el título, copia `.bak` que se recupera sola y `F5` como guardado rápido;
+  - ajustes del jugador en `user://settings.cfg` (`game/settings/game_settings.gd`): una tabla `SPECS` genera el archivo y la página «Ajustes › Opciones»; **no** van en la partida;
+  - reloj con el teclado (`Espacio`, `1`, `2`, `3`) y etiqueta junto al cursor en la vista general (`game/ui/hover_tip.gd`);
+  - el título abre el menú sin partida («Manual y ajustes»);
+  - **las pruebas y el recorrido nunca tocan los archivos del jugador** (`SaveService.slot_path`, `GameSettings.path`). No llames `reload` a un método estático: es un método de `Script` y reinicia las variables estáticas.
 - **Reorganizar la habitación (2026-11-16):** la cama, el escritorio (con silla, PC y regleta), la mesilla, la alfombra y el router se mueven con clic derecho. Los muebles son estado de la simulación (`data/furniture/`, `SimWorld.furniture`), el guardado pasa a v3 y el manual tiene el capítulo 11 ([ADR 0013](docs/adr/0013-furniture-as-simulation-state.md), `docs/INTERACTION_SYSTEM.md` §8.2).
 - **Personaje facetado (2026-11-16):** el jugador usa `character_player`, de modelado facetado con tres tonos por color y las mismas articulaciones que el maniquí (`docs/ART_STYLE.md` §6.1, [ADR 0012](docs/adr/0012-faceted-player-character.md)).
 - **Hito 1 (habitación, cámara y movimiento):** sus tareas 1–7 están hechas dentro de la prueba jugable.
@@ -47,7 +53,7 @@ Simulador 3D de construcción y administración de infraestructura informática.
   - `sim/`: simulación pura (mundo, catálogo y fichas de tienda, red, cables, terminal, misiones, economía y guardado);
   - `data/`: catálogo, fichas de la tienda, reglas de economía, misión y manual;
   - `game/`: presentación;
-  - `tests/`: 90 pruebas sin ventana, *smoke test* y comprobación de modelos;
+  - `tests/`: 101 pruebas sin ventana, *smoke test* y comprobación de modelos;
   - `tools/`: scripts.
 
   Detalle en `docs/ARCHITECTURE.md` y en ROADMAP §1.

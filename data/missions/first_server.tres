@@ -92,6 +92,9 @@ id = &"first_server"
 title = "Primer servidor"
 context = "Quieres empezar tu homelab. Compra en la tienda del PC un rack, un switch y un servidor, móntalos y consigue que el PC y el servidor se comuniquen a través del switch."
 budget_note = "Tienes 1000 créditos: suficiente para el rack, el switch, el servidor y sus cables, con poco margen para errores."
+completion_text = "Tu PC y tu primer servidor ya se comunican a través del switch.
+Mientras siga encendido y en la red, el servidor te dará unos pocos créditos por hora (mira «Mi cuenta» en el PC).
+Fin de la prueba de la primera misión: puedes seguir experimentando."
 reward_credits = 600
 reward_xp = 70
 requirements = Array[ExtResource("1_61lfd")]([SubResource("Resource_kpqi2"), SubResource("Resource_sa3tt"), SubResource("Resource_v7oif"), SubResource("Resource_6gsfv"), SubResource("Resource_olugy"), SubResource("Resource_n25vq"), SubResource("Resource_7r3so"), SubResource("Resource_uvnuk")])

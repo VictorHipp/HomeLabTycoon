@@ -1,14 +1,16 @@
 # Primeros pasos
 
 ## El menú de inicio
-![La pantalla de título con Nueva partida, Cargar partida y Salir del juego](res://assets/manual/00_titulo.png)
+![La pantalla de título con Nueva partida, Cargar partida, Manual y ajustes y Salir del juego](res://assets/manual/00_titulo.png)
 Al abrir el juego aparece el menú de inicio:
 
+- **Continuar:** aparece cuando ya has jugado. Carga lo más reciente, sea tu partida guardada o el autoguardado, y debajo dice cuál es.
 - **Nueva partida:** primero eliges cómo es tu personaje y después empiezas en tu habitación.
-- **Cargar partida:** continúa la partida guardada. Debajo se ve en qué día y hora se quedó y cuántos créditos tenías. Si aún no has guardado ninguna, el botón está apagado y lo dice.
+- **Cargar partida:** carga la partida que guardaste tú. Debajo se ve en qué día y hora se quedó y cuántos créditos tenías. Si aún no has guardado ninguna, el botón está apagado y lo dice.
+- **Manual y ajustes:** este manual (también con `F1`), las opciones y los controles, sin entrar en una partida.
 - **Salir del juego.**
 
-> Hay una sola partida guardada. Desde el juego puedes volver aquí con «Volver al menú principal», en el menú (`Esc`).
+> Desde el juego puedes volver aquí con «Volver al menú principal», en el menú (`Esc`). La partida se autoguarda al salir.
 
 ## Tu personaje
 ![El creador de personaje: las opciones a la izquierda y el personaje girando a la derecha](res://assets/manual/00b_personaje.png)
@@ -18,7 +20,7 @@ Antes de empezar eliges el aspecto de tu personaje. Es solo el aspecto: no cambi
 - **Cambiar:** pulsa `◀` o `▶` en cada fila. El personaje de la derecha cambia al momento.
 - **Girarlo:** arrástralo con el ratón.
 - **«Al azar»** prueba una combinación cualquiera.
-- **«Empezar partida»** entra en la habitación; **«Volver»** regresa al menú de inicio.
+- **«Empezar partida»** entra en la habitación; **«Volver»** (o `Esc`) regresa al menú de inicio.
 
 La partida guardada recuerda el aspecto de tu personaje.
 
@@ -26,7 +28,7 @@ La partida guardada recuerda el aspecto de tu personaje.
 ![Vista general de la habitación con los paneles de la pantalla marcados](res://assets/manual/01_vista_general.png)
 Empiezas en tu habitación con un ordenador antiguo conectado al router de casa. Tu primera misión es montar un pequeño servidor y conseguir que tu PC hable con él.
 
-- **Arriba a la izquierda:** tus créditos (y, debajo, lo que ganas por hora si tienes un servidor en línea), tu nivel y la experiencia, el reloj del juego, la velocidad del tiempo (`II`, `×1`, `×2`, `×4`), «Saltar espera» y el botón «Menú». Cada vez que ganas o gastas créditos o experiencia aparece al lado un aviso como «+10 XP» o «−808 cr».
+- **Arriba a la izquierda:** tus créditos (y, debajo, lo que ganas por hora si tienes un servidor en línea), tu nivel y la experiencia, el reloj del juego, la velocidad del tiempo (`II`, `×1`, `×2`, `×4`; con el teclado, `Espacio` pausa y reanuda y `1`, `2`, `3` eligen la velocidad), «Saltar espera» y el botón «Menú». Cada vez que ganas o gastas créditos o experiencia aparece al lado un aviso como «+10 XP» o «−808 cr».
 - **Arriba a la derecha:** la misión. Cada requisito se marca con ✓ cuando está hecho; el juego lo comprueba solo.
 - **Abajo:** los mensajes, el inventario (lo que has desembalado y aún no has colocado) y una línea de ayuda con los controles del momento.
 
@@ -37,6 +39,8 @@ Empiezas en tu habitación con un ordenador antiguo conectado al router de casa.
 1. Haz **clic izquierdo** en el suelo: tu personaje camina hasta allí rodeando los muebles. Un anillo turquesa marca el destino; si es rojo, ahí no se puede llegar.
 2. Haz clic en un objeto (el ordenador, las cajas, el rack, la regleta, el router) para ir hasta él y usarlo.
 3. Si un sitio no es accesible, el personaje lo dice: «No puedo llegar ahí». Si algo le corta el paso por el camino, se detiene y avisa.
+
+Al pasar el ratón por un objeto o un mueble, una etiqueta junto al cursor dice qué es y qué hace cada botón del ratón sobre él.
 
 El personaje acelera y frena con suavidad, y sus piernas se mueven según lo que avanza de verdad: si se para contra algo, deja de andar.
 

@@ -62,6 +62,7 @@ signal session_attached
 signal title_attached
 
 const SAVE_SLOT := "user://saves/walkthrough.json" ## Never the player's save file.
+const SETTINGS_FILE := "user://walkthrough_settings.cfg" ## Nor the player's settings.
 
 static var _instance: WalkthroughDriver = null
 
@@ -112,6 +113,20 @@ static func attach_title(title_screen: TitleScreen) -> void:
 	_instance.title = title_screen
 
 
+## The walkthrough never reads or writes the player's files: its own save slot (and autosave
+## next to it) and its own settings, and the window keeps the size the script asked for.
+static func isolate_user_files() -> void:
+	if SaveService.slot_path == SAVE_SLOT:
+		return
+	SaveService.slot_path = SAVE_SLOT
+	GameSettings.path = SETTINGS_FILE
+	GameSettings.apply_to_window = false
+	for path: String in [SAVE_SLOT, SAVE_SLOT + ".bak", SaveService.autosave_path(), SaveService.autosave_path() + ".bak", SETTINGS_FILE]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+	GameSettings.read_file()
+
+
 static func _create(anchor: Node) -> void:
 	_instance = WalkthroughDriver.new()
 	_instance.name = "WalkthroughDriver"
@@ -120,10 +135,7 @@ static func _create(anchor: Node) -> void:
 	var requested := _arg("--scenario=")
 	if requested != "":
 		_instance.scenario = requested
-	SaveService.slot_path = SAVE_SLOT
-	for path: String in [SAVE_SLOT, SAVE_SLOT + ".bak"]:
-		if FileAccess.file_exists(path):
-			DirAccess.remove_absolute(path)
+	isolate_user_files()
 	DirAccess.make_dir_recursive_absolute(_instance.out_dir)
 	anchor.get_tree().root.add_child.call_deferred(_instance)
 	_instance._run.call_deferred()
@@ -219,6 +231,35 @@ func _title_and_creator() -> bool:
 		_fail("«Nueva partida» no abrió el creador de personaje")
 		return false
 	if scenario == "menu":
+		_note("T1b. Esc en el creador vuelve al título; «Manual y ajustes» abre el menú sin partida")
+		_key(KEY_ESCAPE)
+		await _frames(10)
+		if title.creator != null:
+			_fail("Esc en el creador no volvió al menú de inicio")
+			return false
+		if title.continue_button.visible:
+			_fail("sin ninguna partida, el título no debería ofrecer «Continuar»")
+		if not await _press(title.find_child("Options", true, false) as Button, "Manual y ajustes"):
+			return false
+		await _frames(10)
+		if not title.menu.visible or title.menu.current != &"settings" or _find_button(title.menu, "Guardar partida") != null:
+			_fail("«Manual y ajustes» no abrió las opciones (o muestra botones de partida)")
+		await _shot("titulo_opciones")
+		_key(KEY_F1)
+		await _frames(10)
+		if title.menu.current != &"manual":
+			_fail("F1 en el título no abrió el manual")
+		_key(KEY_ESCAPE)
+		await _frames(10)
+		if title.menu.visible:
+			_fail("Esc no cerró el menú del título")
+		if not await _press(_find_button(title, "Nueva partida"), "Nueva partida"):
+			return false
+		await _frames(30)
+		creator = title.creator
+		if creator == null:
+			_fail("«Nueva partida» no volvió a abrir el creador")
+			return false
 		_note("T2. Creador: «Al azar», girar arrastrando, «Volver» y otra vez «Nueva partida»")
 		var fx := title.find_child("ClickFeedback", true, false)
 		if fx == null:
@@ -316,17 +357,115 @@ func _menu_steps() -> void:
 	await _wait_mode(InteractionManager.Mode.OVERVIEW)
 	await _wait(func() -> bool: return not s.character.busy, 5.0)
 	_check_standing("tras sentarse con el aspecto elegido")
-	_note("M2. Guardar, volver al menú principal (avisa antes) y cargar desde el título")
+	_note("M1a. Etiqueta junto al cursor: qué es cada cosa y qué hace cada botón")
+	var tip: HoverTip = s.interaction.hover_tip
+	for probe: Array in [[s.monitor.global_position + Vector3(0.0, 0.3, 0.0), "clic izquierdo: sentarte"],
+			[s.target_center(&"device", _house_device(&"router_home").id), "clic derecho: pasarlo a otro mueble"],
+			[Vector3(-1.24, 0.45, -0.465), "clic derecho: cambiar de sitio"]]:
+		_motion(s.camera.unproject_position(probe[0]))
+		await _frames(4)
+		var shown: String = (tip.title_text + " | " + tip._actions.text).to_lower()
+		if not tip.is_shown() or tip.title_text == "" or not shown.contains(String(probe[1])):
+			_fail("la etiqueta del cursor no dice «%s»: «%s»" % [probe[1], shown])
+	await _shot("etiqueta_cursor")
+	_motion(Vector2(8.0, 300.0)) # a wall or nothing: no label
+	await _frames(4)
+	if tip.is_shown():
+		_fail("la etiqueta del cursor sigue visible fuera de los objetos («%s»)" % tip.title_text)
+	_motion(s.camera.unproject_position(s.monitor.global_position + Vector3(0.0, 0.3, 0.0)))
+	await _frames(4)
+	_motion((s.hud.find_child("Speed_0", true, false) as Control).get_global_rect().get_center())
+	await _frames(4)
+	if tip.is_shown():
+		_fail("la etiqueta del cursor sigue visible con el ratón sobre la interfaz")
+	_note("M1b. Teclas del reloj (Espacio, 1, 2, 3) y guardado rápido (F5)")
+	_key(KEY_SPACE)
+	await _frames(3)
+	if s.world.speed != 0.0 or not (s.hud.find_child("Speed_0", true, false) as Button).button_pressed:
+		_fail("Espacio no pausó el reloj (velocidad %.0f)" % s.world.speed)
+	var paused_at := s.world.time_minutes
+	await _frames(30)
+	if s.world.time_minutes != paused_at:
+		_fail("con el reloj en pausa, el tiempo siguió corriendo")
+	_key(KEY_3)
+	await _frames(3)
+	if s.world.speed != 4.0:
+		_fail("la tecla 3 no puso el reloj a ×4 (velocidad %.0f)" % s.world.speed)
+	_key(KEY_SPACE)
+	await _frames(3)
+	_key(KEY_SPACE)
+	await _frames(3)
+	if s.world.speed != 4.0:
+		_fail("Espacio dos veces no volvió a la velocidad de antes (%.0f)" % s.world.speed)
+	_key(KEY_2)
+	await _frames(3)
+	_key(KEY_1)
+	await _frames(3)
+	if s.world.speed != 1.0:
+		_fail("la tecla 1 no devolvió el reloj a ×1 (velocidad %.0f)" % s.world.speed)
+	_key(KEY_F5)
+	await _frames(5)
+	if not FileAccess.file_exists(SaveService.slot_path) or not s.hud._toast.text.contains("guardada"):
+		_fail("F5 no guardó la partida («%s»)" % s.hud._toast.text)
+	_note("M1c. Ajustes › Opciones: cada cambio se aplica y se guarda en el archivo de ajustes")
+	# The cursor is still on a button of the top bar, with its help text showing: Esc must open
+	# the menu all the same.
+	await _frames(60)
+	_key(KEY_ESCAPE)
+	await _frames(5)
+	if not s.menu.visible:
+		_fail("con el ratón sobre un botón del HUD y su ayuda emergente a la vista, Esc no abrió el menú")
+		return
+	if not await _press(s.menu.find_child("Options", true, false) as Button, "Opciones"):
+		return
+	await _frames(5)
+	if not await _press(s.menu.find_child("SettingNext_camera_sensitivity", true, false) as Button, "▶ sensibilidad"):
+		return
+	if absf(s.rig.drag_sensitivity_deg - OverviewCameraRig.DEFAULT_DRAG_SENSITIVITY_DEG * 1.5) > 0.001:
+		_fail("la sensibilidad «Alta» no llegó a la cámara (%.3f)" % s.rig.drag_sensitivity_deg)
+	if not await _press(s.menu.find_child("SettingNext_invert_x", true, false) as Button, "▶ invertir giro"):
+		return
+	if not s.rig.invert_drag_x:
+		_fail("invertir el giro horizontal no llegó a la cámara")
+	if not await _press(s.menu.find_child("SettingNext_show_fps", true, false) as Button, "▶ mostrar FPS"):
+		return
+	var fps := s.hud.find_child("Fps", true, false) as Label
+	if not fps.visible or not fps.text.contains("FPS"):
+		_fail("el contador de fotogramas no aparece («%s»)" % fps.text)
+	if not await _press(s.menu.find_child("SettingPrev_msaa", true, false) as Button, "◀ suavizado"):
+		return
+	if s.get_viewport().msaa_3d != Viewport.MSAA_2X:
+		_fail("el suavizado ×2 no se aplicó (%d)" % s.get_viewport().msaa_3d)
+	await _shot("opciones")
+	var stored := ConfigFile.new()
+	if stored.load(GameSettings.path) != OK or not is_equal_approx(float(stored.get_value(GameSettings.SECTION, "camera_sensitivity", 0.0)), 1.5) \
+			or stored.get_value(GameSettings.SECTION, "invert_x", false) != true:
+		_fail("los ajustes no se guardaron en %s" % GameSettings.path)
+	if GameSettings.path == GameSettings.DEFAULT_PATH:
+		_fail("el recorrido está usando el archivo de ajustes del jugador")
+	# Back to the defaults, with the same buttons.
+	for step: Array in [["SettingPrev_camera_sensitivity", "◀ sensibilidad"], ["SettingNext_invert_x", "▶ invertir giro"],
+			["SettingNext_show_fps", "▶ mostrar FPS"], ["SettingNext_msaa", "▶ suavizado"]]:
+		if not await _press(s.menu.find_child(String(step[0]), true, false) as Button, String(step[1])):
+			return
+	if absf(s.rig.drag_sensitivity_deg - OverviewCameraRig.DEFAULT_DRAG_SENSITIVITY_DEG) > 0.001 or s.rig.invert_drag_x \
+			or fps.visible or s.get_viewport().msaa_3d != Viewport.MSAA_4X:
+		_fail("los ajustes no volvieron a sus valores por defecto")
+	_key(KEY_ESCAPE)
+	await _frames(5)
+	_note("M2. Guardar, volver al menú principal (autoguarda) y cargar desde el título")
 	_key(KEY_ESCAPE)
 	await _frames(5)
 	if not await _press(_find_button(s.menu, "Guardar partida"), "Guardar partida"):
 		return
 	var saved_credits := s.world.credits
 	var saved_minutes := s.world.time_minutes
-	if not await _press(_find_button(s.menu, "Volver al menú principal"), "Volver al menú principal (aviso)"):
-		return
-	if not s.menu._status.text.contains("se perderá"):
-		_fail("volver al menú principal no avisa de lo no guardado: «%s»" % s.menu._status.text)
+	# Something done after saving: a different speed, kept only by the autosave on leaving.
+	await _press(_find_button(s.menu, "Continuar (Esc)"), "Continuar")
+	_key(KEY_2)
+	await _frames(5)
+	_key(KEY_ESCAPE)
+	await _frames(5)
 	var old_title_id := title.get_instance_id() if is_instance_valid(title) else 0 # an id: the old one is freed
 	if not await _press(_find_button(s.menu, "Volver al menú principal"), "Volver al menú principal"):
 		return
@@ -336,6 +475,10 @@ func _menu_steps() -> void:
 	await _frames(30)
 	if title.load_button.disabled or not title.load_note.text.contains("Partida guardada"):
 		_fail("el título no ofrece la partida guardada: «%s»" % title.load_note.text)
+	if not FileAccess.file_exists(SaveService.autosave_path()):
+		_fail("salir al menú principal no hizo el autoguardado")
+	if not title.continue_button.visible or not title.continue_note.text.contains("Autoguardado"):
+		_fail("el título no ofrece continuar desde el autoguardado: «%s»" % title.continue_note.text)
 	await _shot("titulo_con_partida")
 	var old_id := s.get_instance_id() if is_instance_valid(s) else 0
 	if not await _press(_find_button(title, "Cargar partida"), "Cargar partida"):
@@ -350,7 +493,34 @@ func _menu_steps() -> void:
 	if s.character.appearance.to_dict() != look.to_dict():
 		_fail("tras cargar, el aspecto cambió: %s" % s.character.appearance.to_dict())
 	_check_look(s.character.model, look, "tras cargar")
+	if s.world.speed != 1.0:
+		_fail("«Cargar partida» no cargó la partida guardada sino otra (velocidad %.0f)" % s.world.speed)
 	await _shot("cargada_desde_titulo")
+	_note("M3. Volver al título y «Continuar»: carga lo más reciente (el autoguardado al salir)")
+	_key(KEY_3)
+	await _frames(5)
+	_key(KEY_ESCAPE)
+	await _frames(5)
+	old_title_id = title.get_instance_id() if is_instance_valid(title) else 0
+	if not await _press(_find_button(s.menu, "Volver al menú principal"), "Volver al menú principal"):
+		return
+	if not await _wait(func() -> bool: return is_instance_valid(title) and title.get_instance_id() != old_title_id and title.is_inside_tree(), 10.0):
+		_fail("no volvió a la pantalla de título")
+		return
+	await _frames(30)
+	await _shot("titulo_continuar")
+	old_id = s.get_instance_id() if is_instance_valid(s) else 0
+	if not await _press(title.continue_button, "Continuar"):
+		return
+	if not await _wait(func() -> bool: return is_instance_valid(s) and s.get_instance_id() != old_id and s.hud != null, 15.0):
+		_fail("«Continuar» no cargó la partida")
+		return
+	await _frames(60)
+	if s.world.speed != 4.0 or s.world.credits != saved_credits:
+		_fail("«Continuar» no cargó el autoguardado (velocidad %.0f, %d cr)" % [s.world.speed, s.world.credits])
+	if s.character.appearance.to_dict() != look.to_dict():
+		_fail("tras continuar, el aspecto cambió")
+	await _shot("continuada")
 
 
 ## Rearranging the room (docs/INTERACTION_SYSTEM.md §8.2) with real input: right click on each
@@ -536,7 +706,7 @@ func _save_load_layout() -> void:
 	_key(KEY_ESCAPE)
 	await _frames(5)
 	var old_id := s.get_instance_id()
-	if not await _press(_find_button(s.menu, "Cargar partida"), "Cargar partida"):
+	if not await _load_from_menu():
 		return
 	if not await _wait(func() -> bool: return is_instance_valid(s) and s.get_instance_id() != old_id, 10.0):
 		_fail("la partida no se cargó")
@@ -1492,7 +1662,7 @@ func _save_and_load(rack_id: int) -> void:
 	_key(KEY_ESCAPE)
 	await _frames(3)
 	var old_id := s.get_instance_id() # an id, not the session: the old one is freed on loading
-	if not await _press(_find_button(s.menu, "Cargar partida"), "Cargar partida"):
+	if not await _load_from_menu():
 		return
 	if not await _wait(func() -> bool: return is_instance_valid(s) and s.get_instance_id() != old_id, 10.0):
 		_fail("la partida no se cargó")
@@ -1608,6 +1778,10 @@ func _manual_epilogue() -> void:
 	await _frames(3)
 	await _press(_find_button(s.menu, "Guardar partida"), "Guardar partida")
 	await _manual("24_menu_guardar", [_rect_of(_find_button(s.menu, "Guardar partida")), _rect_of(_find_button(s.menu, "Cargar partida")), s.menu._status.get_global_rect()])
+	if not await _press(s.menu.find_child("Options", true, false) as Button, "Opciones"):
+		return
+	await _frames(10)
+	await _manual("25_opciones", [(s.menu._setting_values["autosave_minutes"] as Control).get_parent_control().get_global_rect()])
 	_key(KEY_ESCAPE)
 	await _frames(3)
 
@@ -1863,6 +2037,16 @@ func _click_screen(screen_pos: Vector2, button: MouseButton = MOUSE_BUTTON_LEFT)
 	await _frames(1)
 	_mouse_button(screen_pos, button, false)
 	await _frames(3)
+
+
+## "Cargar partida" of the in-game menu: the first click warns that what was done since the
+## save is lost, the second one loads.
+func _load_from_menu() -> bool:
+	if not await _press(_find_button(s.menu, "Cargar partida"), "Cargar partida (aviso)"):
+		return false
+	if not s.menu._status.text.contains("se perderá"):
+		_fail("cargar desde el menú no avisa de lo que se pierde: «%s»" % s.menu._status.text)
+	return await _press(_find_button(s.menu, "Cargar partida"), "Cargar partida")
 
 
 ## Clicks the centre of a real button and checks that it emitted `pressed`.

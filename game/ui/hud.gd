@@ -38,6 +38,10 @@ var _side: PanelContainer
 var _side_box: VBoxContainer
 var _banner: PanelContainer
 var _banner_label: Label
+var _fps: Label
+var _speed_before_pause: float = 1.0
+## Says whether Space / 1 / 2 / 3 act on the clock now (not while using the computer screen).
+var time_keys_allowed: Callable = Callable()
 
 
 func setup(sim_world: SimWorld) -> void:
@@ -77,9 +81,13 @@ func setup(sim_world: SimWorld) -> void:
 	top_row.add_child(level_box)
 	_clock = UiStyle.label("", 16)
 	top_row.add_child(_clock)
-	for spec: Array in [[0.0, "II"], [1.0, "×1"], [2.0, "×2"], [4.0, "×4"]]:
+	for spec: Array in [[0.0, "II", &"time_pause"], [1.0, "×1", &"time_speed_1"], [2.0, "×2", &"time_speed_2"], [4.0, "×4", &"time_speed_4"]]:
 		var b := UiStyle.button(spec[1], _set_speed.bind(spec[0]))
 		b.toggle_mode = true
+		b.name = "Speed_%d" % int(spec[0])
+		b.tooltip_text = "%s (%s)" % [
+			TranslationServer.translate("Pausar el reloj del juego") if spec[0] == 0.0 else TranslationServer.translate("Velocidad del reloj %s") % spec[1],
+			ControlsReference.keys_for([spec[2]])]
 		_speed_buttons[spec[0]] = b
 		top_row.add_child(b)
 	_skip = UiStyle.button(TranslationServer.translate("Saltar espera"), _skip_wait)
@@ -180,6 +188,17 @@ func setup(sim_world: SimWorld) -> void:
 	banner_box.add_child(_banner_label)
 	banner_box.add_child(UiStyle.button(TranslationServer.translate("Seguir jugando"), func() -> void: _banner.visible = false))
 
+	# Bottom-right corner: frames per second (Ajustes > Pantalla).
+	_fps = UiStyle.label("", 12, UiStyle.MIST)
+	_fps.name = "Fps"
+	_fps.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	_fps.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_fps.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_fps.position -= Vector2(10, 4)
+	_fps.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fps.visible = false
+	root.add_child(_fps)
+
 
 static func INK_DARK() -> Color:
 	return Color("#141A22")
@@ -191,7 +210,39 @@ func _process(delta: float) -> void:
 		_toast.modulate.a = clampf(_toast_time, 0.0, 1.0)
 
 
+## Space pauses / resumes the clock and 1 / 2 / 3 set its speed, as the buttons of the top bar.
+## Read before the interface (a button that was clicked keeps the focus and would take Space),
+## but never while the player is typing or using the computer screen.
+func _input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo:
+		return
+	var speed := -1.0
+	if event.is_action(&"time_pause"):
+		speed = _speed_before_pause if world.speed == 0.0 else 0.0
+	elif event.is_action(&"time_speed_1"):
+		speed = 1.0
+	elif event.is_action(&"time_speed_2"):
+		speed = 2.0
+	elif event.is_action(&"time_speed_4"):
+		speed = 4.0
+	if speed < 0.0:
+		return
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return
+	if time_keys_allowed.is_valid() and not time_keys_allowed.call():
+		return
+	get_viewport().set_input_as_handled()
+	_set_speed(speed)
+	show_toast(TranslationServer.translate("Reloj en pausa. Pulsa %s para reanudarlo.") % ControlsReference.keys_for([&"time_pause"]) if speed == 0.0
+		else TranslationServer.translate("Velocidad del reloj: ×%d") % int(speed))
+
+
 func refresh() -> void:
+	_fps.visible = bool(GameSettings.value("show_fps"))
+	if _fps.visible:
+		_fps.text = "%d FPS" % int(Engine.get_frames_per_second())
 	_credits.text = TranslationServer.translate("%d créditos") % world.credits
 	var rate := world.economy.passive_rate(world)
 	var left := world.economy.passive_left_today(world.time_minutes)
@@ -258,6 +309,8 @@ func _inventory_pressed(device_id: int) -> void:
 
 
 func _set_speed(speed: float) -> void:
+	if world.speed > 0.0:
+		_speed_before_pause = world.speed
 	world.speed = speed
 	refresh()
 
@@ -266,6 +319,22 @@ func _skip_wait() -> void:
 	var r := world.skip_to_next_event()
 	show_toast(r.message, r.ok)
 	refresh()
+
+
+## A short "Autoguardado" by the frame counter's corner: it tells without interrupting.
+func show_saved_mark() -> void:
+	var mark := UiStyle.label(TranslationServer.translate("Autoguardado ✓"), 13, UiStyle.OK)
+	mark.name = "SavedMark"
+	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mark.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	mark.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	mark.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	mark.position -= Vector2(10, 22)
+	_root.add_child(mark)
+	var tween := mark.create_tween()
+	tween.tween_interval(1.6)
+	tween.tween_property(mark, "modulate:a", 0.0, 0.8)
+	tween.tween_callback(mark.queue_free)
 
 
 func show_toast(text: String, ok: bool = true) -> void:

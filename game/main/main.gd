@@ -15,6 +15,9 @@ var title: TitleScreen = null
 
 func _ready() -> void:
 	InputBindings.ensure_defaults()
+	if WalkthroughDriver.requested_dir() != "":
+		WalkthroughDriver.isolate_user_files()
+	GameSettings.apply_window()
 	if GameSession.has_pending_start() or _starts_in_game():
 		session = GameSession.new()
 		session.name = "Session"
@@ -49,7 +52,17 @@ static func load_saved_game(tree: SceneTree) -> Dictionary:
 	return {"ok": true, "message": TranslationServer.translate("Cargando la partida…")}
 
 
-## Leaves the game for the title screen (whatever was not saved is lost).
+## Loads the most recent game, the player's save or the autosave ("Continuar").
+static func continue_game(tree: SceneTree) -> Dictionary:
+	var r := SaveService.read_latest()
+	if not r["ok"]:
+		return r
+	GameSession.prepare_load(r["document"])
+	_reload(tree)
+	return {"ok": true, "message": TranslationServer.translate("Cargando la partida…")}
+
+
+## Leaves the game for the title screen (the in-game menu autosaves first).
 static func back_to_title(tree: SceneTree) -> void:
 	GameSession.clear_pending()
 	_reload(tree)

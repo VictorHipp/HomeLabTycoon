@@ -32,6 +32,10 @@ var _views_dirty: bool = true
 var _hud_timer: float = 0.0
 var _click_marker: MeshInstance3D
 var _click_marker_time: float = 0.0
+var _autosave_clock: float = 0.0 ## Real seconds played (clock running) since the last save.
+var _autosave_wanted: bool = false ## An event asked for an autosave: done on the next frame.
+## False where the game must not write files on its own (headless checks).
+var autosave_enabled: bool = true
 
 ## A loaded save waiting for the scene to be rebuilt (load = reload the scene, so no view or
 ## panel keeps state from the previous game).
@@ -46,7 +50,8 @@ func _ready() -> void:
 	var nav_map := get_world_3d().navigation_map
 	NavigationServer3D.map_set_cell_size(nav_map, 0.05)
 	NavigationServer3D.map_set_cell_height(nav_map, 0.05)
-	get_viewport().msaa_3d = Viewport.MSAA_4X
+	GameSettings.apply_viewport(get_viewport())
+	autosave_enabled = DisplayServer.get_name() != "headless"
 	var loading := _pending_load
 	var look_data: Dictionary = _pending_look
 	_pending_load = {}
@@ -81,6 +86,7 @@ func _ready() -> void:
 	rig = OverviewCameraRig.new()
 	rig.camera = camera
 	add_child(rig)
+	GameSettings.apply_camera(rig)
 	rig.recenter_requested.connect(func() -> void: rig.set_focus(character.global_position + Vector3(0.0, 0.5, 0.0)))
 	director = CameraDirector.new()
 	add_child(director)
@@ -97,6 +103,9 @@ func _ready() -> void:
 	menu = GameMenu.new()
 	add_child(menu)
 	menu.setup(self)
+	menu.settings_changed.connect(_on_settings_changed)
+	hud.time_keys_allowed = func() -> bool:
+		return not (interaction.mode in [InteractionManager.Mode.SCREEN, InteractionManager.Mode.CONSOLE])
 	hud.menu_requested.connect(menu.open.bind(&"controls"))
 	screen.menu_requested.connect(menu.open.bind(&"controls"))
 	_build_click_marker()
@@ -174,11 +183,13 @@ func _apply_presentation(data: Dictionary) -> void:
 		room.nav_region.bake_finished.connect(_snap_character_to_floor, CONNECT_ONE_SHOT)
 	var cam: Dictionary = data.get("camera", {})
 	if cam.has("yaw"):
+		# Through the rig's own limits: a save edited by hand cannot leave the camera lost.
 		rig.target_yaw_deg = float(cam["yaw"])
-		rig.target_pitch_deg = float(cam["pitch"])
-		rig.target_distance = float(cam["distance"])
-		var f: Array = cam["focus"]
-		rig.target_focus = Vector3(float(f[0]), float(f[1]), float(f[2]))
+		rig.tilt_by(float(cam.get("pitch", rig.target_pitch_deg)) - rig.target_pitch_deg)
+		rig.zoom_by(float(cam.get("distance", rig.target_distance)) / rig.target_distance)
+		var f: Array = cam.get("focus", [])
+		if f.size() == 3:
+			rig.set_focus(Vector3(float(f[0]), float(f[1]), float(f[2])))
 		rig.snap()
 
 
@@ -194,19 +205,66 @@ func save_game() -> Dictionary:
 	return SaveService.write(SaveGame.build(world, capture_presentation()))
 
 
-## Reads the save and rebuilds the scene with it. Returns {"ok", "message"}.
-func load_game() -> Dictionary:
-	var r := SaveService.read()
+## Writes the autosave (never the player's save). Returns {"ok", "message"}; ok and silent
+## where the game must not write files on its own.
+func autosave() -> Dictionary:
+	_autosave_wanted = false
+	_autosave_clock = 0.0
+	if not autosave_enabled:
+		return {"ok": true, "message": ""}
+	return SaveService.write(SaveGame.build(world, capture_presentation()), SaveService.autosave_path())
+
+
+## F5: the same as "Guardar partida" of the menu, with the result in a toast.
+func quick_save() -> void:
+	var r := save_game()
+	_autosave_clock = 0.0
+	hud.show_toast(r["message"], r["ok"])
+
+
+func _notification(what: int) -> void:
+	# Closing the window: keep the game (the autosave; "Continuar" on the title picks it up).
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and world != null and int(GameSettings.value("autosave_minutes")) > 0:
+		autosave()
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event.is_action_pressed(&"quick_save") and not event.is_echo():
+		get_viewport().set_input_as_handled()
+		quick_save()
+
+
+func _on_settings_changed(id: String) -> void:
+	match id:
+		"msaa":
+			GameSettings.apply_viewport(get_viewport())
+		"camera_sensitivity", "invert_x", "invert_y":
+			GameSettings.apply_camera(rig)
+		"show_fps":
+			hud.refresh()
+
+
+## Autosave every few real minutes with the clock running (Ajustes > Opciones), and right after
+## the moments worth keeping (an order arrives, a mission is completed).
+func _tick_autosave(delta: float) -> void:
+	var minutes := int(GameSettings.value("autosave_minutes"))
+	if minutes <= 0:
+		_autosave_wanted = false
+		return
+	if world.speed > 0.0:
+		_autosave_clock += delta
+	if not _autosave_wanted and _autosave_clock < minutes * 60.0:
+		return
+	var r := autosave()
 	if not r["ok"]:
-		return r
-	prepare_load(r["document"])
-	get_tree().paused = false
-	get_tree().reload_current_scene.call_deferred()
-	return {"ok": true, "message": TranslationServer.translate("Cargando la partida…")}
+		hud.show_toast(TranslationServer.translate("No se pudo hacer el autoguardado: %s") % r["message"], false)
+	elif autosave_enabled:
+		hud.show_saved_mark()
 
 
 func _process(delta: float) -> void:
 	world.advance(delta)
+	_tick_autosave(delta)
 	room.update_cutaway(camera.global_position)
 	if _views_dirty:
 		_sync_views()
@@ -232,6 +290,7 @@ func _on_world_event(type: StringName, data: Dictionary) -> void:
 			room.sync_furniture(world)
 		&"package_delivered":
 			hud.show_toast(TranslationServer.translate("¡Ha llegado tu pedido! Las cajas están en la zona de entregas, junto a la puerta (×%d).") % world.packages.size())
+			_autosave_wanted = true
 			# If the character stands where the boxes appear, step it out once the floor is re-baked.
 			var spot := world.delivery_spot()
 			var c := character.global_position
@@ -254,7 +313,11 @@ func _on_world_event(type: StringName, data: Dictionary) -> void:
 			elif gained > 0 and String(data.get("text", "")) != "":
 				hud.show_toast("%s · +%d XP" % [data["text"], gained])
 		&"mission_completed":
-			hud.show_banner(TranslationServer.translate("¡Misión completada!\n«%s»\n\n+%d créditos · +%d XP\n\nTu PC y tu primer servidor ya se comunican a través del switch.\nMientras siga encendido y en la red, el servidor te dará unos pocos créditos por hora (mira «Mi cuenta» en el PC).\nFin de la prueba de la primera misión: puedes seguir experimentando.") % [world.mission.definition.title, data["credits"], data["xp"]])
+			var mission := world.mission.definition
+			hud.show_banner(TranslationServer.translate("¡Misión completada!\n«%s»\n\n+%d créditos · +%d XP") % [
+				TranslationServer.translate(mission.title), data["credits"], data["xp"]]
+				+ ("\n\n" + TranslationServer.translate(mission.completion_text) if mission.completion_text != "" else ""))
+			_autosave_wanted = true
 	if interaction != null:
 		interaction.refresh_panel()
 

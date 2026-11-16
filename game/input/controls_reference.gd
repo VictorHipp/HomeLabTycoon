@@ -41,6 +41,11 @@ const GROUPS := [
 		["Repetir órdenes anteriores", "Flechas ↑ y ↓"],
 		["Levantarse del ordenador / cerrar la consola", [&"close_interaction"]],
 	]],
+	["Tiempo y partida (en la vista general)", [
+		["Pausar el reloj del juego / reanudarlo", [&"time_pause"]],
+		["Velocidad ×1 / ×2 / ×4", [&"time_speed_1", &"time_speed_2", &"time_speed_4"]],
+		["Guardado rápido (igual que «Guardar partida»)", [&"quick_save"]],
+	]],
 	["Menú", [
 		["Abrir el menú (en la vista general) · cerrarlo", [&"close_interaction"]],
 		["Abrir o cerrar el manual", [&"open_manual"]],

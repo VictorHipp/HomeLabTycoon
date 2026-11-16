@@ -1,10 +1,14 @@
 class_name TitleScreen
 extends CanvasLayer
-## Title screen (game/main/main.gd): new game (through the character creator), load the saved
-## game and quit. There is one save slot (SaveService); "Cargar partida" says what it holds, or
-## why it cannot be used.
+## Title screen (game/main/main.gd): continue the most recent game (the player's save or the
+## autosave), new game (through the character creator), load the player's save, manual and
+## settings (the in-game menu without a game) and quit. "Continuar" and "Cargar partida" say
+## what they hold, or why they cannot be used.
 
 var creator: CharacterCreator = null
+var menu: GameMenu
+var continue_button: Button
+var continue_note: Label
 var load_button: Button
 var load_note: Label
 var _root: Control
@@ -22,6 +26,10 @@ func _ready() -> void:
 	_root.add_child(bg)
 	_menu = _build_menu()
 	_root.add_child(_menu)
+	menu = GameMenu.new()
+	menu.name = "Menu"
+	add_child(menu)
+	menu.setup(null)
 	var click_fx := ClickFeedback.new() # the same ring under every click as in the game
 	click_fx.name = "ClickFeedback"
 	add_child(click_fx)
@@ -42,6 +50,12 @@ func _build_menu() -> Control:
 	tagline.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(tagline)
 	box.add_child(HSeparator.new())
+	continue_button = UiStyle.button(TranslationServer.translate("Continuar"), _continue)
+	continue_button.name = "Continue"
+	box.add_child(continue_button)
+	continue_note = UiStyle.label("", 14, UiStyle.OK)
+	continue_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(continue_note)
 	var new_button := UiStyle.button(TranslationServer.translate("Nueva partida"), open_creator)
 	new_button.name = "NewGame"
 	box.add_child(new_button)
@@ -51,6 +65,9 @@ func _build_menu() -> Control:
 	load_note = UiStyle.label("", 14, UiStyle.MIST)
 	load_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(load_note)
+	var options := UiStyle.button(TranslationServer.translate("Manual y ajustes"), func() -> void: menu.open(&"settings"))
+	options.name = "Options"
+	box.add_child(options)
 	var quit := UiStyle.button(TranslationServer.translate("Salir del juego"), func() -> void: get_tree().quit())
 	quit.name = "Quit"
 	box.add_child(quit)
@@ -59,17 +76,22 @@ func _build_menu() -> Control:
 
 
 func _refresh_load() -> void:
-	var r := SaveService.read() if SaveService.has_save() else {"ok": false, "message": TranslationServer.translate("No hay ninguna partida guardada.")}
+	# "Continuar": only when there is something to continue (a first-time player does not see it).
+	var latest := SaveService.read_latest()
+	continue_button.visible = latest["ok"]
+	continue_note.visible = latest["ok"]
+	if latest["ok"]:
+		continue_note.text = (TranslationServer.translate("Autoguardado: %s") if latest["auto"] else TranslationServer.translate("Tu partida guardada: %s")) % SaveService.describe(latest["document"])
+	var r := SaveService.read() if SaveService.has_save() else {"ok": false, "message": TranslationServer.translate("No hay ninguna partida guardada."), "from_backup": false}
 	load_button.disabled = not r["ok"]
 	if not r["ok"]:
 		load_note.text = String(r["message"])
 		load_note.add_theme_color_override("font_color", UiStyle.MIST)
 		return
-	var sim: Dictionary = (r["document"] as Dictionary).get("sim", {})
-	var minutes := int(float(sim.get("time_minutes", 0.0)))
-	load_note.text = TranslationServer.translate("Partida guardada: día %d, %02d:%02d · %d créditos") % [
-		minutes / 1440 + 1, (minutes % 1440) / 60, minutes % 60, int(sim.get("credits", 0))]
-	load_note.add_theme_color_override("font_color", UiStyle.OK)
+	load_note.text = TranslationServer.translate("Partida guardada: %s") % SaveService.describe(r["document"])
+	if r["from_backup"]:
+		load_note.text += "\n" + String(r["message"])
+	load_note.add_theme_color_override("font_color", UiStyle.WARN if r["from_backup"] else UiStyle.OK)
 
 
 ## Shows the character creator; "Volver" comes back here.
@@ -87,6 +109,11 @@ func _close_creator() -> void:
 		creator.queue_free()
 		creator = null
 	_menu.visible = true
+
+
+func _continue() -> void:
+	var r := GameLauncher.continue_game(get_tree())
+	continue_note.text = String(r["message"])
 
 
 func _load() -> void:

@@ -24,14 +24,14 @@ static func parse(text: String) -> Dictionary:
 	var json := JSON.new() # the instance API reports errors without printing them
 	var data: Variant = json.data if json.parse(text) == OK else null
 	if not (data is Dictionary) or data.get("format") != FORMAT:
-		return {"ok": false, "message": "El archivo no es una partida de HomeLab Tycoon.", "document": {}}
+		return {"ok": false, "message": TranslationServer.translate("El archivo no es una partida de HomeLab Tycoon."), "document": {}}
 	var version := int(data.get("version", 0))
 	if version > VERSION:
-		return {"ok": false, "message": "La partida es de una versión más nueva del juego (%d)." % version, "document": {}}
+		return {"ok": false, "message": TranslationServer.translate("La partida es de una versión más nueva del juego (%d).") % version, "document": {}}
 	var document: Dictionary = data
 	# Migrations are chained here, one step per version.
 	if not (document.get("sim") is Dictionary):
-		return {"ok": false, "message": "La partida está incompleta.", "document": {}}
+		return {"ok": false, "message": TranslationServer.translate("La partida está incompleta."), "document": {}}
 	if version < 2:
 		# v1 -> v2: the new parts start empty (SimWorld, SimDevice and MissionTracker fill the
 		# defaults: no ledger lines, "used" for what is installed, requirement XP already given

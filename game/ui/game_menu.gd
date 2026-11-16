@@ -1,9 +1,13 @@
 class_name GameMenu
 extends CanvasLayer
-## In-game menu (pauses the game): Continue, Manual, Controls (Settings), Save, Load and back to
-## the title screen.
+## In-game menu (pauses the game): Continue, Manual, Settings (options and controls), Save, Load
+## and back to the title screen.
 ## Opened with Esc in the overview, the "Menú" buttons of the HUD and of the computer screen,
 ## and F1 for the manual. Works while the game is paused (process mode ALWAYS).
+## The title screen uses the same menu without a game (`setup(null)`): manual and settings only.
+
+signal settings_changed(id: String)
+signal closed
 
 var session: GameSession
 var current: StringName = &""
@@ -12,7 +16,9 @@ var _content: VBoxContainer
 var _status: Label
 var _load_button: Button
 var _title_button: Button
-var _title_armed: bool = false ## The first press warns; the second one leaves.
+var _title_armed: bool = false ## Only when the autosave failed: the first press warns.
+var _load_armed: bool = false ## Loading drops what was not saved: the first press warns.
+var _setting_values: Dictionary = {} ## setting id -> Label
 
 
 func setup(game: GameSession) -> void:
@@ -39,18 +45,25 @@ func setup(game: GameSession) -> void:
 	nav.add_theme_constant_override("separation", 8)
 	row.add_child(nav)
 	nav.add_child(UiStyle.label("HomeLab Tycoon", 22, UiStyle.HIGHLIGHT))
-	nav.add_child(UiStyle.label(TranslationServer.translate("Juego en pausa"), 14, UiStyle.MIST))
-	nav.add_child(UiStyle.button(TranslationServer.translate("Continuar (Esc)"), close))
+	var in_game := session != null
+	nav.add_child(UiStyle.label(TranslationServer.translate("Juego en pausa") if in_game else TranslationServer.translate("Menú de inicio"), 14, UiStyle.MIST))
+	var resume := UiStyle.button(TranslationServer.translate("Continuar (Esc)") if in_game else TranslationServer.translate("Volver (Esc)"), close)
+	resume.name = "Resume"
+	nav.add_child(resume)
 	nav.add_child(UiStyle.button(TranslationServer.translate("Manual (F1)"), show_page.bind(&"manual")))
 	nav.add_child(UiStyle.label(TranslationServer.translate("Ajustes"), 14, UiStyle.MIST))
+	var options := UiStyle.button(TranslationServer.translate("Opciones"), show_page.bind(&"settings"))
+	options.name = "Options"
+	nav.add_child(options)
 	nav.add_child(UiStyle.button(TranslationServer.translate("Controles"), show_page.bind(&"controls")))
-	nav.add_child(UiStyle.label(TranslationServer.translate("Partida"), 14, UiStyle.MIST))
-	nav.add_child(UiStyle.button(TranslationServer.translate("Guardar partida"), _save))
-	_load_button = UiStyle.button(TranslationServer.translate("Cargar partida"), _load)
-	nav.add_child(_load_button)
-	_title_button = UiStyle.button(TranslationServer.translate("Volver al menú principal"), _to_title)
-	_title_button.name = "ToTitle"
-	nav.add_child(_title_button)
+	if in_game:
+		nav.add_child(UiStyle.label(TranslationServer.translate("Partida"), 14, UiStyle.MIST))
+		nav.add_child(UiStyle.button(TranslationServer.translate("Guardar partida"), _save))
+		_load_button = UiStyle.button(TranslationServer.translate("Cargar partida"), _load)
+		nav.add_child(_load_button)
+		_title_button = UiStyle.button(TranslationServer.translate("Volver al menú principal"), _to_title)
+		_title_button.name = "ToTitle"
+		nav.add_child(_title_button)
 	_status = UiStyle.label("", 14, UiStyle.OK)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.custom_minimum_size = Vector2(200, 0)
@@ -66,7 +79,9 @@ func open(page: StringName = &"controls") -> void:
 	get_tree().paused = true
 	_status.text = ""
 	_title_armed = false
-	_load_button.disabled = not SaveService.has_save()
+	_load_armed = false
+	if _load_button != null:
+		_load_button.disabled = not SaveService.has_save()
 	show_page(page)
 
 
@@ -75,6 +90,7 @@ func close() -> void:
 		return
 	visible = false
 	get_tree().paused = false
+	closed.emit()
 
 
 func _input(event: InputEvent) -> void:
@@ -103,6 +119,8 @@ func show_page(page: StringName) -> void:
 			manual.setup()
 		&"controls":
 			_build_controls()
+		&"settings":
+			_build_settings()
 
 
 func _build_controls() -> void:
@@ -141,24 +159,93 @@ func _build_controls() -> void:
 	list.add_child(note)
 
 
-func _save() -> void:
-	var r := session.save_game()
+## Ajustes > Opciones: one row per setting of GameSettings (◀ value ▶), applied and saved at once.
+func _build_settings() -> void:
+	_setting_values.clear()
+	_content.add_child(UiStyle.label(TranslationServer.translate("Ajustes · Opciones"), 24, UiStyle.HIGHLIGHT))
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_content.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 6)
+	scroll.add_child(list)
+	var group := ""
+	for spec: Dictionary in GameSettings.SPECS:
+		var id := String(spec["id"])
+		if String(spec["group"]) != group:
+			group = String(spec["group"])
+			list.add_child(UiStyle.label(TranslationServer.translate(group), 18, UiStyle.MUSTARD))
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 8)
+		list.add_child(line)
+		var what := UiStyle.label(TranslationServer.translate(String(spec["label"])), 15)
+		what.custom_minimum_size = Vector2(330, 0)
+		line.add_child(what)
+		var prev := UiStyle.button("◀", _change_setting.bind(id, -1))
+		prev.name = "SettingPrev_" + id
+		line.add_child(prev)
+		var value := UiStyle.label("", 15, UiStyle.HIGHLIGHT)
+		value.custom_minimum_size = Vector2(170, 0)
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		line.add_child(value)
+		_setting_values[id] = value
+		var next := UiStyle.button("▶", _change_setting.bind(id, 1))
+		next.name = "SettingNext_" + id
+		line.add_child(next)
+		if String(spec["note"]) != "":
+			var note := UiStyle.label(TranslationServer.translate(String(spec["note"])), 13, UiStyle.MIST)
+			note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			note.custom_minimum_size = Vector2(600, 0)
+			list.add_child(note)
+	var where := UiStyle.label(TranslationServer.translate("Los ajustes se guardan en este equipo, aparte de las partidas."), 13, UiStyle.MIST)
+	where.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	list.add_child(where)
+	_refresh_settings()
+
+
+func _change_setting(id: String, step: int) -> void:
+	GameSettings.cycle(id, step)
+	GameSettings.apply_window()
+	_refresh_settings()
+	settings_changed.emit(id)
+
+
+func _refresh_settings() -> void:
+	for id: String in _setting_values:
+		(_setting_values[id] as Label).text = GameSettings.value_label(id)
+
+
+func _show_status(r: Dictionary) -> void:
 	_status.text = r["message"]
 	_status.add_theme_color_override("font_color", UiStyle.OK if r["ok"] else UiStyle.BAD)
+
+
+func _save() -> void:
+	_show_status(session.save_game())
+	_load_armed = false
 	_load_button.disabled = not SaveService.has_save()
 
 
-## Back to the title screen. What was not saved is lost: the first press says so.
+## Back to the title screen. The game is autosaved first, so nothing is lost ("Continuar" on the
+## title screen picks it up). Only if that fails the first press warns and the second one leaves.
 func _to_title() -> void:
 	if not _title_armed:
-		_title_armed = true
-		_status.text = TranslationServer.translate("Lo que no hayas guardado se perderá. Pulsa otra vez «Volver al menú principal» para salir.")
-		_status.add_theme_color_override("font_color", UiStyle.WARN)
-		return
+		var r := session.autosave()
+		if not r["ok"]:
+			_title_armed = true
+			_status.text = TranslationServer.translate("No se pudo hacer el autoguardado (%s). Lo que no hayas guardado se perderá. Pulsa otra vez «Volver al menú principal» para salir.") % r["message"]
+			_status.add_theme_color_override("font_color", UiStyle.WARN)
+			return
 	GameLauncher.back_to_title(get_tree())
 
 
+## Loads the player's save. What was done since is lost: the first press says so.
 func _load() -> void:
-	var r := session.load_game()
-	_status.text = r["message"]
-	_status.add_theme_color_override("font_color", UiStyle.OK if r["ok"] else UiStyle.BAD)
+	if not _load_armed:
+		_load_armed = true
+		_status.text = TranslationServer.translate("Vas a volver a tu partida guardada: lo que hayas hecho después se perderá. Pulsa otra vez «Cargar partida» para cargarla.")
+		_status.add_theme_color_override("font_color", UiStyle.WARN)
+		return
+	_show_status(GameLauncher.load_saved_game(get_tree()))

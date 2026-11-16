@@ -9,11 +9,12 @@ extends Node3D
 signal recenter_requested
 
 const DRAG_THRESHOLD_PX := 4.0
+const DEFAULT_DRAG_SENSITIVITY_DEG := 0.3 ## Scaled by the player's setting (GameSettings).
 
 @export var camera: Camera3D
 @export_group("Rotation")
 @export var key_rotate_speed_deg: float = 100.0 ## Degrees per second while Q / E are held.
-@export var drag_sensitivity_deg: float = 0.3 ## Degrees per pixel of mouse drag.
+@export var drag_sensitivity_deg: float = DEFAULT_DRAG_SENSITIVITY_DEG ## Degrees per pixel of mouse drag.
 @export var invert_drag_x: bool = false
 @export var invert_drag_y: bool = false
 @export var pitch_min_deg: float = 25.0
